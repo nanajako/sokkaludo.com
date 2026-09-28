@@ -1,0 +1,3233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soccer Ludo 2.2 - Created by Jako</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- PeerJS: free WebRTC connection/signaling -->
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <style>
+        .board-container {
+            display: grid;
+            grid-template-columns: repeat(15, minmax(0, 1fr));
+            grid-template-rows: repeat(15, minmax(0, 1fr));
+            aspect-ratio: 1 / 1;
+            max-width: 620px;
+            width: 100%;
+            position: relative;
+        }
+
+        .board-cell {
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: bold;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+
+        /* Watermark pitch overlay styling */
+        .watermark-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-35deg);
+            font-weight: 900;
+            letter-spacing: 0.25em;
+            color: rgba(255, 255, 255, 0.12);
+            pointer-events: none;
+            user-select: none;
+            white-space: nowrap;
+            z-index: 5;
+            text-transform: uppercase;
+            font-size: clamp(1.5rem, 5vw, 3.2rem);
+            text-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        /* Die 3D Animation Effect */
+        .dice-box {
+            width: 58px;
+            height: 58px;
+            transition: transform 0.2s ease;
+        }
+
+        /* Highlight pulse for selectable pawn tokens */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.8); }
+            70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgba(234, 179, 8, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
+        }
+        .selectable-pawn {
+            animation: pulse-ring 1.4s infinite ease-in-out, selectable-pawn-light 1.05s infinite ease-in-out;
+            cursor: pointer;
+            z-index: 30 !important;
+        }
+
+        /* Visual-only selectable-player pop/glow: does not alter game logic. */
+        @keyframes selectable-pawn-light {
+            0%, 100% {
+                filter: drop-shadow(0 0 2px rgba(255,255,255,.35)) drop-shadow(0 0 5px rgba(250,204,21,.35));
+            }
+            45% {
+                filter: drop-shadow(0 0 5px rgba(255,255,255,.95)) drop-shadow(0 0 12px rgba(250,204,21,.95)) drop-shadow(0 0 20px rgba(250,204,21,.55));
+            }
+            65% {
+                filter: drop-shadow(0 0 4px rgba(255,255,255,.75)) drop-shadow(0 0 9px rgba(250,204,21,.75));
+            }
+        }
+
+        /* Ball Icon Indicator */
+        .has-ball::after {
+            content: '⚽';
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            font-size: 13px;
+            filter: drop-shadow(0 0 2px black);
+            z-index: 35;
+            animation: bounce 0.8s infinite alternate;
+        }
+
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-4px); }
+        }
+
+        /* Pitch Grass Stripes Texture */
+        .turf-bg {
+            background-color: #15803d;
+            background-image: repeating-linear-gradient(
+                0deg,
+                #15803d,
+                #15803d 32px,
+                #16a34a 32px,
+                #16a34a 64px
+            );
+        }
+    
+/* =========================================================
+   SOCCER LUDO 2.0 — POLISH LAYER
+   Keeps the original game engine intact while upgrading
+   presentation, feedback, onboarding and mobile UX.
+   ========================================================= */
+body {
+    background:
+      radial-gradient(circle at 50% -10%, rgba(16,185,129,.12), transparent 35%),
+      radial-gradient(circle at 0% 100%, rgba(20,184,166,.08), transparent 30%),
+      #020617 !important;
+}
+header {
+    box-shadow: 0 14px 40px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+.board-container {
+    filter: drop-shadow(0 18px 30px rgba(0,0,0,.35));
+    border: 2px solid rgba(255,255,255,.10);
+    border-radius: 18px;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.05);
+}
+.board-cell {
+    border-color: rgba(255,255,255,.09) !important;
+}
+.pawn-token {
+    box-shadow: 0 5px 12px rgba(0,0,0,.45), inset 0 1px 1px rgba(255,255,255,.45) !important;
+    transition: transform .18s ease, filter .18s ease, box-shadow .18s ease !important;
+}
+.pawn-token:hover {
+    transform: translateY(-2px) scale(1.08);
+    filter: brightness(1.12);
+}
+#dice {
+    box-shadow: 0 12px 25px rgba(0,0,0,.25), inset 0 1px 2px rgba(255,255,255,.7) !important;
+}
+#roll-btn {
+    min-height: 48px;
+}
+#status-log {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
+}
+.v2-glass {
+    background: rgba(15,23,42,.88);
+    border: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 20px 50px rgba(0,0,0,.35);
+    backdrop-filter: blur(16px);
+}
+.v2-toast {
+    position: fixed;
+    left: 50%;
+    top: 84px;
+    transform: translate(-50%, -12px) scale(.96);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 150;
+    min-width: min(92vw, 340px);
+    max-width: min(92vw, 520px);
+    text-align: center;
+    padding: 12px 18px;
+    border-radius: 16px;
+    background: rgba(2,6,23,.94);
+    border: 1px solid rgba(52,211,153,.35);
+    box-shadow: 0 18px 45px rgba(0,0,0,.45);
+    transition: opacity .2s ease, transform .2s ease;
+}
+.v2-toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+}
+.v2-toast strong {
+    display:block;
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:#34d399;
+}
+.v2-toast span {
+    display:block;
+    margin-top:3px;
+    font-size:12px;
+    color:#e2e8f0;
+    font-weight:700;
+}
+.v2-flash {
+    position: fixed;
+    inset: 0;
+    z-index: 140;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .15s ease;
+}
+.v2-flash.show { opacity:1; }
+.v2-flash-card {
+    transform: scale(.78);
+    opacity:0;
+    transition:transform .25s cubic-bezier(.2,.8,.2,1), opacity .2s ease;
+    text-align:center;
+    padding:22px 28px;
+    border-radius:24px;
+    background:rgba(2,6,23,.86);
+    border:1px solid rgba(255,255,255,.12);
+    box-shadow:0 30px 90px rgba(0,0,0,.55);
+    backdrop-filter:blur(12px);
+}
+.v2-flash.show .v2-flash-card {
+    transform:scale(1);
+    opacity:1;
+}
+.v2-flash-kicker {
+    font-size:10px;
+    font-weight:900;
+    letter-spacing:.22em;
+    color:#94a3b8;
+    text-transform:uppercase;
+}
+.v2-flash-title {
+    margin-top:5px;
+    font-size:clamp(26px,6vw,48px);
+    line-height:1;
+    font-weight:1000;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:#f8fafc;
+}
+.v2-result {
+    position:fixed;
+    inset:0;
+    z-index:170;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:16px;
+    background:rgba(2,6,23,.86);
+    backdrop-filter:blur(12px);
+}
+.v2-result.hidden { display:none; }
+.v2-result-card {
+    width:min(440px,100%);
+    border-radius:28px;
+    padding:26px;
+    background:linear-gradient(180deg,rgba(15,23,42,.98),rgba(2,6,23,.98));
+    border:1px solid rgba(52,211,153,.28);
+    box-shadow:0 30px 100px rgba(0,0,0,.6);
+}
+.v2-stat {
+    padding:11px 12px;
+    border-radius:14px;
+    background:rgba(15,23,42,.85);
+    border:1px solid rgba(255,255,255,.06);
+}
+.v2-stat b { display:block; font-size:18px; color:#f8fafc; }
+.v2-stat span { font-size:9px; font-weight:900; color:#64748b; text-transform:uppercase; letter-spacing:.12em; }
+@media (max-width:640px) {
+    body { padding: 6px !important; }
+    header { border-radius:16px !important; }
+    .board-container { border-radius:14px; }
+    .v2-toast { top:72px; }
+}
+
+
+/* =========================================================
+   SOCCER LUDO 2.1 — STADIUM PRESENTATION LAYER
+   Phase 2: pitch identity, player-token polish, event motion
+   ========================================================= */
+.board-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    background:
+      linear-gradient(to bottom, transparent 49.65%, rgba(255,255,255,.30) 49.65%, rgba(255,255,255,.30) 50.35%, transparent 50.35%),
+      radial-gradient(circle at 50% 50%, transparent 0 8.5%, rgba(255,255,255,.24) 8.6%, rgba(255,255,255,.24) 8.9%, transparent 9%),
+      radial-gradient(circle at 50% 50%, rgba(255,255,255,.20) 0 1.1%, transparent 1.2%);
+    mix-blend-mode: screen;
+}
+.board-container::after {
+    content: '';
+    position: absolute;
+    inset: 3.2%;
+    z-index: 4;
+    pointer-events: none;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 10px;
+    box-shadow:
+      inset 0 0 0 22% rgba(255,255,255,.015),
+      inset 0 0 0 1px rgba(255,255,255,.03);
+}
+.pawn-token {
+    width: 30px !important;
+    height: 30px !important;
+    min-width: 24px;
+    font-size: 10px !important;
+    font-weight: 1000 !important;
+    border-width: 2px !important;
+    position: relative;
+    overflow: visible;
+    transform-origin: 50% 85%;
+}
+.pawn-token::before {
+    content: '';
+    position: absolute;
+    left: 5px;
+    right: 5px;
+    top: 8px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.72);
+    opacity: .85;
+    pointer-events: none;
+}
+.pawn-token::after {
+    content: attr(data-number);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 9px;
+    font-weight: 1000;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0,0,0,.75);
+    z-index: 36;
+    pointer-events: none;
+}
+.pawn-token.has-ball::after {
+    content: '⚽';
+    top: -7px;
+    right: -8px;
+    left: auto;
+    transform: none;
+    font-size: 12px;
+    text-shadow: 0 1px 3px #000;
+}
+.pawn-token.recent-move {
+    animation: player-kick .55s cubic-bezier(.2,.8,.2,1);
+}
+@keyframes player-kick {
+    0% { transform: translateY(0) scale(1); }
+    35% { transform: translateY(-7px) rotate(-7deg) scale(1.13); filter: brightness(1.25); }
+    70% { transform: translateY(1px) rotate(4deg) scale(.98); }
+    100% { transform: translateY(0) rotate(0) scale(1); }
+}
+.pitch-live-label {
+    position: static;
+    z-index: 8;
+    pointer-events: none;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(2,6,23,.72);
+    border: 1px solid rgba(255,255,255,.14);
+    color: rgba(255,255,255,.78);
+    font-size: 8px;
+    font-weight: 1000;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    backdrop-filter: blur(5px);
+}
+.v3-match-status {
+    display:flex;
+    align-items:center;
+    gap:7px;
+    padding:4px 7px;
+    border-radius:12px;
+    background:rgba(2,6,23,.52);
+    border:1px solid rgba(255,255,255,.10);
+    box-shadow:0 6px 18px rgba(0,0,0,.16);
+}
+.pitch-live-dot {
+    display:inline-block;
+    width:6px;height:6px;border-radius:50%;
+    background:#34d399;
+    box-shadow:0 0 10px rgba(52,211,153,.8);
+    margin-right:5px;
+    animation: live-pulse 1.3s infinite;
+}
+@keyframes live-pulse {
+    0%,100% { opacity:.45; transform:scale(.85); }
+    50% { opacity:1; transform:scale(1.15); }
+}
+.goal-celebration-burst {
+    position: fixed;
+    inset: 0;
+    z-index: 145;
+    pointer-events: none;
+    overflow: hidden;
+}
+.goal-piece {
+    position:absolute;
+    width:7px;
+    height:13px;
+    border-radius:2px;
+    background: rgba(255,255,255,.95);
+    top:45%;
+    left:50%;
+    animation: goal-piece-fly 900ms cubic-bezier(.1,.7,.2,1) forwards;
+}
+@keyframes goal-piece-fly {
+    0% { transform: translate(-50%,-50%) rotate(0deg) scale(.6); opacity:1; }
+    100% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)) scale(1); opacity:0; }
+}
+.v2-result-card {
+    max-height: 92vh;
+    overflow-y: auto;
+}
+.v2-scoreline {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    padding:8px 10px;
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:12px;
+    background:rgba(2,6,23,.45);
+    font-size:11px;
+}
+.v2-scoreline .team-name { font-weight:900; color:#e2e8f0; }
+.v2-scoreline .team-score { font-weight:1000; color:#fbbf24; font-size:15px; }
+@media (max-width:640px) {
+    .pawn-token { width:26px !important; height:26px !important; }
+    .pitch-live-label { left:7px; top:7px; font-size:7px; }
+}
+
+/* =========================================================
+   SOCCER LUDO 2.2 — REQUESTED POLISH PASS
+   ========================================================= */
+.pawn-token { width:22px !important; height:22px !important; min-width:22px !important; font-size:8px !important; border-width:1.5px !important; }
+@media (max-width:640px){ .pawn-token{width:19px !important;height:19px !important;min-width:19px !important;font-size:7px !important;} }
+.board-cell .pawn-token { position:absolute !important; left:50% !important; top:50% !important; margin:0 !important; transform:translate(-50%,-50%) !important; z-index:40 !important; }
+.board-cell .pawn-token:hover { transform:translate(-50%,-54%) scale(1.08) !important; }
+.v3-center-trophy { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:8; pointer-events:none; }
+.v3-center-trophy i { font-size:23px; color:#fbbf24; filter:drop-shadow(0 4px 7px rgba(0,0,0,.65)); transform:translateZ(0); }
+.v3-clock { display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:12px; background:rgba(2,6,23,.82); border:1px solid rgba(52,211,153,.28); color:#f8fafc; font-size:11px; font-weight:1000; letter-spacing:.08em; box-shadow:inset 0 1px rgba(255,255,255,.05); }
+.v3-clock-dot { width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 8px rgba(52,211,153,.9); }
+.v3-clock.paused .v3-clock-dot { background:#f59e0b;box-shadow:0 0 8px rgba(245,158,11,.8); }
+.v3-ball-wrap { height:92px; display:flex; align-items:center; justify-content:center; perspective:700px; overflow:hidden; }
+.v3-ball { width:68px;height:68px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:48px;line-height:1; filter:drop-shadow(0 18px 12px rgba(0,0,0,.5)); animation:v3-ball-roll 2.3s cubic-bezier(.45,.05,.55,.95) infinite; transform-style:preserve-3d; }
+@keyframes v3-ball-roll { 0%{transform:translateX(-125px) rotateY(0deg) rotateZ(0deg) scale(.78)} 45%{transform:translateX(0) rotateY(540deg) rotateZ(18deg) scale(1)} 100%{transform:translateX(125px) rotateY(1080deg) rotateZ(36deg) scale(.78)} }
+.v3-winner-overlay { position:fixed; inset:0; z-index:210; display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity .25s ease; background:radial-gradient(circle,rgba(16,185,129,.14),rgba(2,6,23,.82) 62%); }
+.v3-winner-overlay.show { opacity:1; }
+.v3-winner-card { text-align:center; transform:scale(.65); transition:transform .45s cubic-bezier(.2,.9,.2,1); }
+.v3-winner-overlay.show .v3-winner-card { transform:scale(1); }
+.v3-trophy-3d { font-size:100px; color:#fbbf24; text-shadow:0 8px 0 #a16207,0 16px 30px rgba(0,0,0,.65); animation:v3-trophy-spin 1.7s ease-in-out infinite; transform-style:preserve-3d; }
+@keyframes v3-trophy-spin { 0%{transform:rotateY(-28deg) translateY(10px) scale(.85)} 50%{transform:rotateY(28deg) translateY(-10px) scale(1.08)} 100%{transform:rotateY(-28deg) translateY(10px) scale(.85)} }
+.v3-winner-title { margin-top:5px;font-size:clamp(30px,8vw,58px);font-weight:1000;letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 4px 20px rgba(0,0,0,.65); }
+.v3-winner-sub { margin-top:7px;font-size:12px;font-weight:900;color:#fbbf24;letter-spacing:.18em;text-transform:uppercase; }
+@media(max-width:640px){ .v3-clock{padding:6px 8px;font-size:10px}.v3-ball-wrap{height:78px}.v3-ball{width:58px;height:58px;font-size:42px}.v3-trophy-3d{font-size:78px} }
+
+/* SOLO TEAM PICKER — VISUAL SELECTION ONLY */
+#solo-team-choices .solo-team-choice {
+    position:relative;
+    opacity:.62;
+    border:2px solid transparent !important;
+    box-shadow:0 2px 7px rgba(0,0,0,.22);
+    transition:transform .16s ease, opacity .16s ease, box-shadow .16s ease, border-color .16s ease, filter .16s ease;
+}
+#solo-team-choices .solo-team-choice:hover {
+    opacity:.9;
+    transform:translateY(-1px);
+    filter:brightness(1.08);
+}
+#solo-team-choices .solo-team-choice.solo-team-selected {
+    opacity:1 !important;
+    border-color:#f8fafc !important;
+    box-shadow:0 0 0 2px rgba(16,185,129,.95), 0 0 16px rgba(16,185,129,.55), 0 5px 12px rgba(0,0,0,.38);
+    transform:translateY(-1px) scale(1.015);
+    filter:brightness(1.12) saturate(1.08);
+}
+#solo-team-choices .solo-team-choice.solo-team-selected::after {
+    content:'✓';
+    position:absolute;
+    top:4px;
+    right:5px;
+    width:18px;
+    height:18px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:50%;
+    background:#10b981;
+    color:#fff;
+    font-size:12px;
+    font-weight:1000;
+    line-height:1;
+    box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+
+
+/* =========================================================
+   JAKO VISUAL QUALITY PASS
+   VISUAL-ONLY LAYER — NO GAME LOGIC OR EVENT HANDLERS CHANGED
+   ========================================================= */
+
+/* --- Global visual system --- */
+:root {
+    --jako-green: #10b981;
+    --jako-green-bright: #34d399;
+    --jako-teal: #14b8a6;
+    --jako-surface: rgba(15, 23, 42, .86);
+    --jako-surface-2: rgba(2, 6, 23, .72);
+    --jako-border: rgba(148, 163, 184, .14);
+    --jako-border-green: rgba(52, 211, 153, .28);
+    --jako-shadow: 0 22px 60px rgba(0,0,0,.34);
+}
+
+html {
+    background: #020617;
+    scroll-behavior: smooth;
+}
+
+body {
+    background:
+        radial-gradient(900px 520px at 50% -120px, rgba(16,185,129,.16), transparent 62%),
+        radial-gradient(600px 420px at -10% 70%, rgba(20,184,166,.10), transparent 65%),
+        radial-gradient(600px 420px at 110% 75%, rgba(14,165,233,.06), transparent 65%),
+        linear-gradient(180deg, #020617 0%, #030b16 48%, #020617 100%) !important;
+    color: #f8fafc;
+}
+
+/* Subtle premium background texture */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    opacity: .20;
+    background-image:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
+/* --- Header / top navigation --- */
+header {
+    position: relative;
+    isolation: isolate;
+    background:
+        linear-gradient(135deg, rgba(15,23,42,.97), rgba(2,6,23,.91)) !important;
+    border: 1px solid rgba(148,163,184,.13) !important;
+    border-radius: 22px !important;
+    padding: 12px 14px !important;
+    box-shadow:
+        0 18px 50px rgba(0,0,0,.28),
+        inset 0 1px 0 rgba(255,255,255,.055) !important;
+}
+
+header::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    top: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(52,211,153,.55), transparent);
+    pointer-events: none;
+}
+
+header .bg-gradient-to-tr {
+    box-shadow:
+        0 8px 22px rgba(16,185,129,.20),
+        inset 0 1px 0 rgba(255,255,255,.25) !important;
+}
+
+header h1 {
+    text-shadow: 0 0 24px rgba(52,211,153,.13);
+}
+
+header button {
+    min-height: 40px;
+    border-radius: 12px !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.055);
+    transition:
+        transform .16s ease,
+        filter .16s ease,
+        background-color .16s ease,
+        border-color .16s ease,
+        box-shadow .16s ease !important;
+}
+
+header button:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.07);
+}
+
+header button:active {
+    transform: translateY(0) scale(.98);
+}
+
+/* --- Scoreboard --- */
+#scoreboard {
+    align-items: stretch;
+    filter: drop-shadow(0 8px 18px rgba(0,0,0,.18));
+}
+
+#scoreboard > * {
+    border-radius: 13px !important;
+}
+
+/* --- Main game stage --- */
+main {
+    position: relative;
+}
+
+main > .turf-bg {
+    background:
+        radial-gradient(circle at 50% 20%, rgba(255,255,255,.07), transparent 30%),
+        repeating-linear-gradient(
+            90deg,
+            #0f7138 0,
+            #0f7138 9%,
+            #13833f 9%,
+            #13833f 18%
+        ) !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    border-radius: 25px !important;
+    padding: 10px !important;
+    box-shadow:
+        0 30px 75px rgba(0,0,0,.40),
+        0 0 0 1px rgba(16,185,129,.10),
+        inset 0 1px 0 rgba(255,255,255,.08) !important;
+}
+
+/* Stadium-style outer glow */
+main > .turf-bg::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 25px;
+    pointer-events: none;
+    background:
+        linear-gradient(135deg, rgba(255,255,255,.07), transparent 18%, transparent 78%, rgba(0,0,0,.16)),
+        radial-gradient(circle at 50% 50%, transparent 45%, rgba(0,0,0,.16));
+    z-index: 1;
+}
+
+/* Keep board above the stadium treatment */
+#board {
+    position: relative;
+    z-index: 2;
+}
+
+/* Pitch watermark */
+.watermark-text {
+    color: rgba(255,255,255,.075) !important;
+    letter-spacing: .34em !important;
+    text-shadow:
+        0 2px 10px rgba(0,0,0,.20),
+        0 0 24px rgba(255,255,255,.035) !important;
+}
+
+/* --- Board --- */
+.board-container {
+    border-radius: 17px !important;
+    border: 2px solid rgba(255,255,255,.18) !important;
+    box-shadow:
+        0 18px 35px rgba(0,0,0,.30),
+        inset 0 0 0 1px rgba(255,255,255,.06),
+        inset 0 0 35px rgba(0,0,0,.10) !important;
+    background-color: #0b6332;
+}
+
+.board-cell {
+    border-color: rgba(255,255,255,.075) !important;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.025);
+}
+
+.board-cell:hover {
+    filter: brightness(1.035);
+}
+
+/* --- Sidebar cards --- */
+main .lg\:w-80 > div:not(.text-center) {
+    box-shadow:
+        0 16px 36px rgba(0,0,0,.22),
+        inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+main .lg\:w-80 > div {
+    border-color: rgba(148,163,184,.11) !important;
+}
+
+main .lg\:w-80 > div.bg-slate-900 {
+    background:
+        linear-gradient(145deg, rgba(15,23,42,.96), rgba(7,15,29,.94)) !important;
+    border-radius: 20px !important;
+}
+
+/* Current turn panel */
+#turn-badge {
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 4px 14px rgba(0,0,0,.18);
+}
+
+/* Dice */
+#dice {
+    width: 66px !important;
+    height: 66px !important;
+    border-radius: 18px !important;
+    background:
+        linear-gradient(145deg, #ffffff, #e2e8f0) !important;
+    border: 1px solid rgba(255,255,255,.75) !important;
+    box-shadow:
+        0 14px 25px rgba(0,0,0,.30),
+        inset 0 2px 3px rgba(255,255,255,.95),
+        inset 0 -3px 8px rgba(15,23,42,.10) !important;
+}
+
+#dice i {
+    filter: drop-shadow(0 2px 2px rgba(0,0,0,.18));
+}
+
+#roll-btn {
+    min-height: 50px !important;
+    border-radius: 14px !important;
+    padding-left: 22px !important;
+    padding-right: 22px !important;
+    box-shadow:
+        0 10px 25px rgba(16,185,129,.18),
+        inset 0 1px 0 rgba(255,255,255,.20) !important;
+}
+
+#roll-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+}
+
+#status-log {
+    background:
+        linear-gradient(145deg, rgba(2,6,23,.88), rgba(15,23,42,.70)) !important;
+    border-color: rgba(148,163,184,.10) !important;
+    border-radius: 14px !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.035),
+        inset 0 0 24px rgba(16,185,129,.025) !important;
+}
+
+/* Match feed */
+#event-feed {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(52,211,153,.35) transparent;
+}
+
+#event-feed::-webkit-scrollbar,
+#chat-messages::-webkit-scrollbar,
+.v2-result-card::-webkit-scrollbar {
+    width: 5px;
+}
+
+#event-feed::-webkit-scrollbar-thumb,
+#chat-messages::-webkit-scrollbar-thumb,
+.v2-result-card::-webkit-scrollbar-thumb {
+    background: rgba(52,211,153,.30);
+    border-radius: 99px;
+}
+
+/* --- Floating chat --- */
+#floating-chat-btn {
+    box-shadow:
+        0 16px 35px rgba(0,0,0,.35),
+        0 0 0 1px rgba(52,211,153,.08),
+        inset 0 1px 0 rgba(255,255,255,.22) !important;
+    border-radius: 16px !important;
+}
+
+#chat-widget {
+    border-color: rgba(52,211,153,.16) !important;
+    box-shadow:
+        0 28px 70px rgba(0,0,0,.48),
+        0 0 0 1px rgba(255,255,255,.025) !important;
+}
+
+/* --- Modals / lobby --- */
+#mp-modal > div,
+#solo-modal > div,
+#rules-modal > div,
+#freeze-modal > div,
+#goal-modal > div,
+.v2-result-card {
+    border-radius: 24px !important;
+    border-color: rgba(52,211,153,.18) !important;
+    background:
+        linear-gradient(145deg, rgba(15,23,42,.985), rgba(2,6,23,.975)) !important;
+    box-shadow:
+        0 35px 100px rgba(0,0,0,.60),
+        inset 0 1px 0 rgba(255,255,255,.045) !important;
+}
+
+#mp-modal input,
+#solo-modal select,
+#solo-modal input,
+#rules-modal button,
+#mp-modal button,
+#solo-modal button,
+#goal-modal button {
+    border-radius: 13px !important;
+}
+
+#room-code-display {
+    text-shadow: 0 0 24px rgba(52,211,153,.18);
+}
+
+/* Animated ball in lobby */
+.v3-ball {
+    filter:
+        drop-shadow(0 18px 14px rgba(0,0,0,.45))
+        drop-shadow(0 0 24px rgba(255,255,255,.06)) !important;
+}
+
+/* --- Feedback overlays --- */
+.v2-toast {
+    border-color: rgba(52,211,153,.38) !important;
+    box-shadow:
+        0 20px 55px rgba(0,0,0,.50),
+        inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+
+.v2-flash-card {
+    border-color: rgba(52,211,153,.20) !important;
+    box-shadow:
+        0 35px 100px rgba(0,0,0,.60),
+        0 0 50px rgba(16,185,129,.06) !important;
+}
+
+.v3-winner-overlay {
+    background:
+        radial-gradient(circle at 50% 45%, rgba(16,185,129,.18), rgba(2,6,23,.90) 64%) !important;
+}
+
+.v3-trophy-3d {
+    filter: drop-shadow(0 15px 28px rgba(0,0,0,.50));
+}
+
+/* --- Selection buttons --- */
+#solo-team-choices .solo-team-choice {
+    min-height: 46px;
+    border-radius: 13px !important;
+    box-shadow:
+        0 5px 14px rgba(0,0,0,.20),
+        inset 0 1px 0 rgba(255,255,255,.10) !important;
+}
+
+/* --- General interactive polish without changing handlers --- */
+button,
+select,
+input {
+    -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+    outline: 2px solid rgba(52,211,153,.65);
+    outline-offset: 2px;
+}
+
+/* --- Mobile layout refinement --- */
+@media (max-width: 1024px) {
+    body {
+        padding: 7px !important;
+    }
+
+    header {
+        gap: 10px;
+    }
+
+    main {
+        gap: 12px !important;
+    }
+}
+
+@media (max-width: 640px) {
+    body {
+        padding: 6px !important;
+    }
+
+    header {
+        padding: 10px !important;
+        border-radius: 18px !important;
+    }
+
+    header > div:last-child {
+        width: 100%;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0,1fr));
+        gap: 6px !important;
+    }
+
+    header > div:last-child > .v3-match-status {
+        grid-column: 1 / -1;
+        justify-content: center;
+    }
+
+    header > div:last-child > button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    main > .turf-bg {
+        width: 100%;
+        border-radius: 20px !important;
+        padding: 7px !important;
+    }
+
+    .board-container {
+        border-radius: 13px !important;
+    }
+
+    #dice {
+        width: 58px !important;
+        height: 58px !important;
+        border-radius: 16px !important;
+        font-size: 1.6rem !important;
+    }
+
+    #roll-btn {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+    }
+
+    #floating-chat-btn {
+        right: 12px !important;
+        bottom: 12px !important;
+    }
+
+    #chat-widget {
+        right: 10px !important;
+        bottom: 68px !important;
+        width: calc(100vw - 20px) !important;
+    }
+}
+
+/* Respect reduced-motion preferences while preserving all functionality */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .001ms !important;
+    }
+}
+
+
+/* =========================================================
+   SOCCER LUDO 2.3 — GOAL TROPHY + DICE-AREA STATUS
+   VISUAL-ONLY ADDITION: existing game logic remains untouched
+   ========================================================= */
+
+/* Keep the moved live/match-time display compact and visually attached to the roll controls. */
+.v4-dice-match-strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    margin: 1px 0 2px;
+}
+.v4-dice-match-strip .v3-match-status {
+    width: 100%;
+    justify-content: center;
+    gap: 9px;
+    padding: 6px 9px;
+    background:
+        linear-gradient(180deg, rgba(15,23,42,.94), rgba(2,6,23,.88));
+    border-color: rgba(52,211,153,.22);
+}
+.v4-dice-match-strip .pitch-live-label {
+    padding: 3px 7px;
+    font-size: 8px;
+}
+.v4-dice-match-strip .v3-clock {
+    padding: 5px 8px;
+    font-size: 10px;
+    background: rgba(15,23,42,.78);
+}
+
+/* Centre trophy: hidden during normal play, automatically visible while the
+   existing goal modal is open. Pawns remain underneath it on the board. */
+.v4-goal-trophy-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(.72);
+    transition:
+        opacity .22s ease,
+        transform .45s cubic-bezier(.16,1,.3,1),
+        visibility 0s linear .45s;
+    overflow: hidden;
+}
+body:has(#goal-modal:not(.hidden)) .v4-goal-trophy-layer {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+    transition:
+        opacity .22s ease,
+        transform .45s cubic-bezier(.16,1,.3,1),
+        visibility 0s;
+}
+.v4-goal-trophy-stage {
+    position: relative;
+    width: 155px;
+    height: 190px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 850px;
+}
+.v4-trophy-rays {
+    position: absolute;
+    width: 135px;
+    height: 135px;
+    border-radius: 50%;
+    background:
+        radial-gradient(circle, rgba(251,191,36,.28) 0 12%, rgba(251,191,36,.11) 35%, transparent 69%);
+    box-shadow:
+        0 0 35px rgba(251,191,36,.26),
+        0 0 75px rgba(16,185,129,.16);
+    animation: v4-trophy-aura 1.35s ease-in-out infinite;
+}
+.v4-trophy {
+    position: relative;
+    width: 112px;
+    height: 145px;
+    transform-style: preserve-3d;
+    animation: v4-trophy-motion 1.65s ease-in-out infinite;
+    filter: drop-shadow(0 18px 15px rgba(0,0,0,.55));
+}
+.v4-trophy-cup {
+    position: absolute;
+    left: 24px;
+    top: 17px;
+    width: 64px;
+    height: 67px;
+    transform: perspective(500px) rotateX(-3deg);
+}
+.v4-trophy-body {
+    position: absolute;
+    left: 7px;
+    top: 4px;
+    width: 50px;
+    height: 60px;
+    border-radius: 8px 8px 23px 23px;
+    background:
+        linear-gradient(90deg,
+            #8a5a00 0%,
+            #d99a08 14%,
+            #ffe27a 31%,
+            #f7c744 48%,
+            #b97905 67%,
+            #ffd95a 84%,
+            #9a6503 100%);
+    clip-path: polygon(14% 0, 86% 0, 78% 55%, 65% 78%, 58% 100%, 42% 100%, 35% 78%, 22% 55%);
+    box-shadow:
+        inset 4px 0 5px rgba(255,255,255,.22),
+        inset -7px 0 9px rgba(60,36,0,.28);
+}
+.v4-trophy-rim {
+    position: absolute;
+    left: 1px;
+    top: 0;
+    width: 62px;
+    height: 10px;
+    border-radius: 50%;
+    background: linear-gradient(180deg,#fff1a8,#d99a08 45%,#8a5a00);
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+    z-index: 3;
+}
+.v4-trophy-highlight {
+    position: absolute;
+    left: 20px;
+    top: 12px;
+    width: 8px;
+    height: 43px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.42);
+    transform: rotate(10deg);
+    filter: blur(.3px);
+    z-index: 4;
+}
+.v4-trophy-handle {
+    position: absolute;
+    top: 23px;
+    width: 37px;
+    height: 48px;
+    border: 9px solid #c48a08;
+    border-radius: 50%;
+    background: transparent;
+    box-shadow:
+        inset 2px 0 2px rgba(255,235,150,.45),
+        0 2px 3px rgba(0,0,0,.35);
+}
+.v4-trophy-handle-left {
+    left: 1px;
+    transform: rotate(-10deg);
+}
+.v4-trophy-handle-right {
+    right: 1px;
+    transform: rotate(10deg);
+}
+.v4-trophy-stem {
+    position: absolute;
+    left: 49px;
+    top: 76px;
+    width: 16px;
+    height: 28px;
+    background: linear-gradient(90deg,#8a5a00,#ffe27a 45%,#a96e02);
+    box-shadow: inset 2px 0 2px rgba(255,255,255,.25);
+}
+.v4-trophy-base {
+    position: absolute;
+    left: 27px;
+    bottom: 14px;
+    width: 59px;
+    height: 23px;
+    border-radius: 5px 5px 8px 8px;
+    background: linear-gradient(180deg,#ffe27a 0%,#d99a08 38%,#805200 100%);
+    box-shadow:
+        inset 0 2px rgba(255,255,255,.25),
+        0 7px 8px rgba(0,0,0,.42);
+}
+.v4-trophy-base::after {
+    content: '';
+    position: absolute;
+    left: -8px;
+    right: -8px;
+    bottom: -6px;
+    height: 8px;
+    border-radius: 50%;
+    background: linear-gradient(180deg,#9a6503,#5a3900);
+}
+.v4-goal-label {
+    position: absolute;
+    left: 50%;
+    bottom: -1px;
+    transform: translateX(-50%);
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(2,6,23,.82);
+    border: 1px solid rgba(251,191,36,.42);
+    color: #fde68a;
+    font-size: 10px;
+    font-weight: 1000;
+    letter-spacing: .24em;
+    text-transform: uppercase;
+    box-shadow: 0 5px 15px rgba(0,0,0,.35);
+    white-space: nowrap;
+}
+@keyframes v4-trophy-motion {
+    0%,100% {
+        transform: rotateY(-18deg) rotateZ(-1deg) translateY(5px) scale(.94);
+    }
+    50% {
+        transform: rotateY(18deg) rotateZ(1deg) translateY(-8px) scale(1.04);
+    }
+}
+@keyframes v4-trophy-aura {
+    0%,100% { transform: scale(.88); opacity: .58; }
+    50% { transform: scale(1.08); opacity: 1; }
+}
+
+@media (max-width:640px) {
+    .v4-dice-match-strip .pitch-live-label { font-size: 7px; }
+    .v4-dice-match-strip .v3-clock { font-size: 9px; }
+    .v4-goal-trophy-stage { transform: scale(.78); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .v4-trophy,
+    .v4-trophy-rays { animation: none; }
+}
+
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col items-center justify-between p-2 md:p-6">
+
+    <header class="w-full max-w-4xl flex flex-wrap justify-between items-center bg-slate-900/90 border border-slate-800 p-3 rounded-2xl mb-2 shadow-xl backdrop-blur">
+        <div class="flex items-center gap-3">
+            <div class="bg-gradient-to-tr from-emerald-600 to-teal-400 text-slate-950 p-2.5 rounded-xl font-black text-xl shadow-lg">
+                <i class="fa-solid fa-futbol"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="font-black text-lg md:text-xl tracking-tight bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-200 bg-clip-text text-transparent uppercase">
+                        Soccer Ludo
+                    </h1>
+                    <span class="bg-emerald-500/20 text-emerald-400 text-[10px] font-black px-2 py-0.5 rounded-full border border-emerald-500/30">
+                        AUDIO ACTIVE
+                    </span>
+                </div>
+                <p class="text-xs text-slate-400 font-semibold tracking-wider flex items-center gap-1">
+                    <i class="fa-solid fa-certificate text-emerald-400 text-[10px]"></i> CREATED BY JAKO
+                </p>
+            </div>
+        </div>
+
+        <!-- Dynamic Scoreboard -->
+        <div id="scoreboard" class="flex gap-2 my-2 sm:my-0">
+            <!-- Rendered dynamically -->
+        </div>
+
+        <div class="flex items-center gap-2">
+            <!-- Mute Audio Toggle Button -->
+            <button id="sound-btn" onclick="toggleMute()" class="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 hover:bg-emerald-500/30">
+                <i id="sound-icon" class="fa-solid fa-volume-high"></i> <span id="sound-text">Sound ON</span>
+            </button>
+            <button onclick="toggleSinglePlayerMenu()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg">
+                <i class="fa-solid fa-robot"></i> Solo vs Bots
+            </button>
+            <button onclick="toggleChat()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5 relative">
+                <i class="fa-solid fa-comments text-emerald-400"></i> Chat
+                <span id="chat-header-badge" class="hidden absolute -top-1.5 -right-1.5 bg-emerald-500 text-slate-950 text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center shadow">0</span>
+            </button>
+            <button onclick="openRulesModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl text-xs font-bold border border-slate-700 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-circle-info text-emerald-400"></i> Rules
+            </button>
+            <button onclick="restartGame()" class="bg-red-600/80 hover:bg-red-500 text-white px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                <i class="fa-solid fa-rotate-right"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <main class="w-full max-w-4xl flex flex-col lg:flex-row gap-4 items-center lg:items-start justify-center">
+
+        <!-- Ludo Soccer Field -->
+        <div class="turf-bg p-2 md:p-3 rounded-2xl shadow-2xl border-4 border-slate-800 relative overflow-hidden">
+            
+            <!-- JAKO Watermark on Pitch Turf -->
+            <div class="watermark-text">
+                Created By Jako
+            </div>
+
+            <div id="board" class="board-container bg-emerald-950/30 rounded-xl overflow-hidden">
+                <!-- Board grid dynamic generation -->
+
+                <!-- Visual-only goal celebration: shown by the existing goal modal state. -->
+                <div class="v4-goal-trophy-layer" aria-hidden="true">
+                    <div class="v4-goal-trophy-stage">
+                        <div class="v4-trophy-rays"></div>
+                        <div class="v4-trophy">
+                            <div class="v4-trophy-cup">
+                                <div class="v4-trophy-rim"></div>
+                                <div class="v4-trophy-body"></div>
+                                <div class="v4-trophy-highlight"></div>
+                            </div>
+                            <div class="v4-trophy-handle v4-trophy-handle-left"></div>
+                            <div class="v4-trophy-handle v4-trophy-handle-right"></div>
+                            <div class="v4-trophy-stem"></div>
+                            <div class="v4-trophy-base"></div>
+                        </div>
+                        <div class="v4-goal-label">GOAL!</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar / Dashboard -->
+        <div class="w-full lg:w-80 flex flex-col gap-3">
+            
+            <!-- Current Player / Roll Card -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+                    <span class="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Current Turn</span>
+                    <div class="flex items-center gap-2">
+                        <span id="turn-badge" class="px-3 py-1 rounded-full text-xs font-black bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                            Blue FC
+                        </span>
+                    </div>
+                </div>
+
+                <!-- JAKO Stadium Live + Match Running Time (moved beside dice controls; same existing IDs) -->
+                <div class="v4-dice-match-strip">
+                    <div class="v3-match-status" title="JAKO Stadium Live Match"><div class="pitch-live-label"><span class="pitch-live-dot"></span>JAKO STADIUM • LIVE</div><div id="match-clock" class="v3-clock" title="Match time"><span class="v3-clock-dot"></span><span id="match-clock-value">00:00</span></div></div>
+                </div>
+
+                <!-- Dice & Roll Controls -->
+                <div class="flex items-center justify-around py-2">
+                    <div class="dice-container">
+                        <div id="dice" class="dice-box flex items-center justify-center bg-slate-100 rounded-2xl text-slate-900 font-bold text-3xl shadow-inner border-2 border-slate-300">
+                            <i class="fa-solid fa-dice-one"></i>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center gap-1">
+                        <button id="roll-btn" onclick="rollDice()" class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black px-6 py-3 rounded-xl shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 text-sm tracking-wide">
+                            <i class="fa-solid fa-dice"></i> ROLL DICE
+                        </button>
+                        <span id="roll-hint" class="text-[10px] text-slate-400 font-medium">Roll 6 to enter pitch</span>
+                    </div>
+                </div>
+
+                <!-- Live Status Banner -->
+                <div id="status-log" class="bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs leading-relaxed text-slate-300 min-h-[56px] flex items-center justify-center text-center font-medium">
+                    Kick-off ready! Roll the dice to start match.
+                </div>
+            </div>
+
+            <!-- Match Event Feed -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg flex-1 flex flex-col justify-between">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="text-[11px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1.5">
+                        <i class="fa-solid fa-list-check text-emerald-400"></i> Tactical Match Log
+                    </h3>
+                    <span class="text-[10px] text-slate-500 font-bold">JAKO AUDIO ENGINE</span>
+                </div>
+                
+                <div id="event-feed" class="flex flex-col gap-1.5 max-h-44 overflow-y-auto text-xs pr-1">
+                    <div class="text-slate-500 italic text-center py-2 text-[11px]">Whistle blown! Game created by Jako.</div>
+                </div>
+
+                <!-- Pitch Tactical Legend -->
+                <div class="mt-3 pt-2.5 border-t border-slate-800 grid grid-cols-2 gap-1.5 text-[10px] text-slate-400 font-semibold">
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-yellow-400 inline-block shadow"></span> Corner Kick (+3)</div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block shadow"></span> Throw-In (Extra Turn)</div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block shadow"></span> Tackle / Over (Out)</div>
+                    <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-300 inline-block shadow"></span> Stadium Goal Box</div>
+                </div>
+            </div>
+
+            <!-- Author Footer Badge -->
+            <div class="text-center text-[11px] text-slate-500 font-bold tracking-widest uppercase">
+                SOCCER LUDO • CREATED BY JAKO
+            </div>
+
+        </div>
+    </main>
+
+    <div id="solo-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[110] flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-emerald-500/30 max-w-md w-full rounded-3xl p-6 shadow-2xl space-y-4">
+            <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+                <h3 class="text-base font-black text-emerald-400 uppercase tracking-wide flex items-center gap-2">
+                    <i class="fa-solid fa-robot"></i> Solo vs AI Bots Setup
+                </h3>
+                <button onclick="toggleSinglePlayerMenu()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-300">
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1 uppercase text-[10px]">Your Team Color</label>
+                    <div id="solo-team-choices" class="grid grid-cols-2 gap-2">
+                        <button onclick="setSoloTeam('blue')" id="btn-solo-blue" class="solo-team-choice solo-team-selected bg-blue-600 text-white font-black py-2.5 rounded-xl">Blue Strikers</button>
+                        <button onclick="setSoloTeam('red')" id="btn-solo-red" class="solo-team-choice bg-red-600 text-white font-black py-2.5 rounded-xl">Red Devils</button>
+                        <button onclick="setSoloTeam('green')" id="btn-solo-green" class="solo-team-choice bg-emerald-600 text-white font-black py-2.5 rounded-xl">Green Eagles</button>
+                        <button onclick="setSoloTeam('yellow')" id="btn-solo-yellow" class="solo-team-choice bg-amber-500 text-white font-black py-2.5 rounded-xl">Yellow Lions</button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1 uppercase text-[10px]">Number of AI Opponents</label>
+                    <select id="solo-ai-count" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-bold outline-none focus:border-emerald-500">
+                        <option value="1">1 AI Bot (1v1 Match)</option>
+                        <option value="2">2 AI Bots (3-Player Match)</option>
+                        <option value="3" selected>3 AI Bots (Full 4-Player Match)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-bold text-slate-400 mb-1 uppercase text-[10px]">AI Difficulty</label>
+                    <select id="v2-ai-difficulty" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 font-bold outline-none focus:border-emerald-500">
+                        <option value="easy">Easy — unpredictable</option>
+                        <option value="pro" selected>Pro — tactical</option>
+                        <option value="master">Master — aggressive</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="startSoloGame()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg tracking-wider uppercase text-xs">
+                START SOLO MATCH
+            </button>
+        </div>
+    </div>
+
+    <!-- Multiplayer Lobby -->
+    <div id="mp-modal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-emerald-500/30 max-w-lg w-full rounded-3xl p-6 shadow-2xl">
+            <div class="text-center mb-5">
+                <div class="v3-ball-wrap" aria-hidden="true"><div class="v3-ball">⚽</div></div>
+                <h2 class="text-2xl font-black text-emerald-400 uppercase tracking-wide">SOCCER LUDO</h2>
+                <p class="text-xs text-slate-400 mt-1">2–4 players • One room • Different phones</p>
+            </div>
+
+            <div id="mp-home" class="space-y-3">
+                <div class="v2-glass rounded-2xl p-3 text-center mb-1">
+                    <div class="text-[10px] font-black uppercase tracking-[.18em] text-emerald-400">Match Ready</div>
+                    <div class="text-xs text-slate-400 mt-1">Play solo immediately or create a room for friends.</div>
+                </div>
+                <button onclick="startQuickPlayV2()" class="w-full bg-emerald-500 hover:bg-emerald-400 active:scale-[.99] text-slate-950 font-black py-3.5 rounded-xl shadow-lg shadow-emerald-500/20 transition">
+                    <i class="fa-solid fa-bolt mr-1"></i> QUICK PLAY
+                </button>
+                <div class="text-[9px] text-slate-500 text-center font-bold uppercase tracking-widest">Multiplayer</div>
+                <input id="mp-name" maxlength="18" placeholder="Enter your player name" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500">
+                <button id="create-room-btn" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl">CREATE ROOM</button>
+                <button id="show-join-btn" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-700">JOIN ROOM</button>
+                <button onclick="mpHide('mp-modal')" class="w-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs">PLAY SOLO OR CLOSE</button>
+                <p id="mp-error" class="hidden text-red-400 text-xs text-center"></p>
+            </div>
+
+            <div id="mp-join" class="hidden space-y-3">
+                <input id="join-name" maxlength="18" placeholder="Your player name" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm outline-none focus:border-emerald-500">
+                <input id="room-code-input" maxlength="6" placeholder="ROOM CODE" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-xl font-black tracking-[0.35em] uppercase outline-none focus:border-emerald-500">
+                <button id="join-room-btn" class="w-full bg-blue-500 hover:bg-blue-400 text-white font-black py-3 rounded-xl">JOIN ROOM</button>
+                <button id="back-home-btn" class="w-full bg-slate-800 text-slate-300 font-bold py-2.5 rounded-xl">BACK</button>
+            </div>
+
+            <div id="mp-lobby" class="hidden">
+                <div class="bg-slate-950 border border-slate-800 rounded-2xl p-4 mb-4 text-center">
+                    <div class="text-[10px] uppercase font-black text-slate-500">Room Code</div>
+                    <div id="room-code-display" class="text-3xl font-black tracking-[0.3em] text-white mt-1"></div>
+                    <button id="copy-room-btn" class="mt-2 text-[11px] font-bold text-emerald-400">COPY CODE</button>
+                </div>
+                <div id="player-list" class="space-y-2 mb-4"></div>
+                <div id="team-picker" class="mb-4"></div>
+                <button id="start-game-btn" class="hidden w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl">START MATCH</button>
+                <p id="lobby-status" class="text-[11px] text-slate-400 text-center mt-3"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multiplayer status badge -->
+    <div id="mp-status" class="fixed top-2 left-2 z-[60] hidden bg-slate-900/95 border border-emerald-500/30 rounded-xl px-3 py-2 text-[10px] font-black text-emerald-400 shadow-lg"></div>
+
+    <!-- Floating Mini Chat Floating Toggle Button -->
+    <button id="floating-chat-btn" onclick="toggleChat()" class="fixed bottom-4 right-4 z-[90] bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black p-3.5 rounded-2xl shadow-2xl flex items-center gap-2 border border-emerald-300/40 transition-all transform hover:scale-105 active:scale-95">
+        <i class="fa-solid fa-comments text-lg"></i>
+        <span class="text-xs tracking-wider uppercase font-extrabold hidden sm:inline">Mini Chat</span>
+        <span id="floating-chat-badge" class="hidden bg-slate-950 text-emerald-400 text-[10px] font-black px-1.5 py-0.5 rounded-full border border-emerald-500/40">0</span>
+    </button>
+
+    <!-- Mini Chat Box Overlay -->
+    <div id="chat-widget" class="fixed bottom-16 right-4 z-[95] w-80 sm:w-88 max-w-[calc(100vw-2rem)] bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden transition-all duration-300 transform translate-y-6 opacity-0 pointer-events-none hidden">
+        <!-- Chat Header -->
+        <div class="bg-slate-950/90 border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-comments text-emerald-400 text-sm"></i>
+                <h3 class="text-xs font-black tracking-wider uppercase text-slate-200">Pitch Mini Chat</h3>
+                <span class="bg-emerald-500/20 text-emerald-400 text-[9px] font-bold px-1.5 py-0.5 rounded-full">LIVE</span>
+            </div>
+            <button onclick="toggleChat()" class="text-slate-400 hover:text-white transition p-1">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+
+        <!-- Quick Reaction Bar -->
+        <div class="bg-slate-900/80 px-3 py-2 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto text-[11px] no-scrollbar">
+            <button onclick="sendQuickChat('⚽ GOAL!')" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 font-bold transition">⚽ GOAL!</button>
+            <button onclick="sendQuickChat('👏 GG!')" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 font-bold transition">👏 GG!</button>
+            <button onclick="sendQuickChat('🔥 Nice Move!')" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 font-bold transition">🔥 Nice!</button>
+            <button onclick="sendQuickChat('😂 Unlucky!')" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 font-bold transition">😂 Unlucky!</button>
+            <button onclick="sendQuickChat('⏱️ Hurry up!')" class="shrink-0 bg-slate-800 hover:bg-slate-700 text-slate-200 px-2 py-1 rounded-lg border border-slate-700 font-bold transition">⏱️ Fast!</button>
+        </div>
+
+        <!-- Chat Feed -->
+        <div id="chat-messages" class="p-3 h-56 overflow-y-auto space-y-2 text-xs flex flex-col">
+            <div class="text-center text-slate-500 italic text-[11px] py-2">Match chat ready. Send a message to opponents!</div>
+        </div>
+
+        <!-- Chat Input Form -->
+        <form onsubmit="handleChatSubmit(event)" class="bg-slate-950 p-2 border-t border-slate-800 flex items-center gap-2">
+            <input id="chat-input" maxlength="100" autocomplete="off" placeholder="Type tactical message..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 outline-none focus:border-emerald-500 transition">
+            <button type="submit" class="bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-black px-3 py-2 rounded-xl text-xs transition flex items-center gap-1">
+                <i class="fa-solid fa-paper-plane"></i>
+            </button>
+        </form>
+    </div>
+
+    <!-- 1-Hour Room Freeze Overlay -->
+    <div id="freeze-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-[120] flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border-2 border-red-500 max-w-sm w-full rounded-2xl p-6 shadow-2xl text-center space-y-4">
+            <div class="text-5xl">🧊</div>
+            <h2 class="text-2xl font-black text-red-400 uppercase tracking-widest">
+                GAME FROZEN
+            </h2>
+            <p class="text-xs text-slate-300">
+                1 hour of complete inactivity reached. Match has been frozen.
+            </p>
+            <button onclick="window.location.reload()" class="w-full bg-red-600 hover:bg-red-500 text-white font-black py-3 rounded-xl shadow-lg transition text-xs">
+                RESTART MATCH
+            </button>
+        </div>
+    </div>
+
+    <!-- Rules Modal -->
+    <div id="rules-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 max-w-md w-full rounded-2xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeRulesModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            
+            <h2 class="text-base font-black text-emerald-400 flex items-center gap-2 mb-3 tracking-wide uppercase">
+                <i class="fa-solid fa-book"></i> Rules of Soccer Ludo
+            </h2>
+
+            <div class="space-y-3 text-xs text-slate-300 leading-relaxed">
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <strong class="text-white block mb-1 font-bold">⚽ Match Objective:</strong>
+                    Navigate your team's players around the stadium pitch and down your team's goal corridor to score goals in the central Goal Box!
+                </div>
+
+                <div class="space-y-2">
+                    <p><strong class="text-emerald-400">1. Pitch Entry:</strong> Roll a <strong>6</strong> to bring a player off the bench and onto your starting tile.</p>
+                    <p><strong class="text-emerald-400">2. Tackling & Interceptions:</strong> Landing on an opponent's tile tackles them, takes possession, and sends their player back to their bench (Over / Out)!</p>
+                    <p><strong class="text-emerald-400">3. Corner Kicks (Yellow Tiles):</strong> Landing here launches your player 3 extra steps forward with a long cross.</p>
+                    <p><strong class="text-emerald-400">4. Throw-Ins (Orange Tiles):</strong> Retain possession with an immediate bonus dice roll.</p>
+                    <p><strong class="text-emerald-400">5. Scoring Goals:</strong> Enter the central Goal Box with an exact roll. First team to <strong>2 Goals</strong> wins the championship!</p>
+                </div>
+            </div>
+
+            <button onclick="closeRulesModal()" class="w-full mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-2.5 rounded-xl transition text-xs tracking-wider">
+                PLAY MATCH
+            </button>
+        </div>
+    </div>
+
+    <!-- Soccer Ludo 2.0 feedback layer -->
+    <div id="v2-toast" class="v2-toast">
+        <strong id="v2-toast-title">MATCH UPDATE</strong>
+        <span id="v2-toast-text">Your move has been registered.</span>
+    </div>
+
+    <div id="v2-flash" class="v2-flash">
+        <div class="v2-flash-card">
+            <div id="v2-flash-kicker" class="v2-flash-kicker">MATCH EVENT</div>
+            <div id="v2-flash-title" class="v2-flash-title">KICK-OFF</div>
+        </div>
+    </div>
+    <div id="goal-celebration-burst" class="goal-celebration-burst hidden"></div>
+
+    <div id="v3-winner-overlay" class="v3-winner-overlay">
+        <div class="v3-winner-card">
+            <div class="v3-trophy-3d">🏆</div>
+            <div id="v3-winner-title" class="v3-winner-title">CHAMPIONS</div>
+            <div id="v3-winner-sub" class="v3-winner-sub">FULL TIME • SOCCER LUDO</div>
+        </div>
+    </div>
+
+    <div id="v2-result" class="v2-result hidden">
+        <div class="v2-result-card">
+            <div class="text-center">
+                <div class="text-5xl mb-2">🏆</div>
+                <div class="text-[10px] font-black uppercase tracking-[.22em] text-emerald-400">Full Time</div>
+                <h2 id="v2-result-title" class="text-3xl font-black text-white mt-1">CHAMPIONS</h2>
+                <p id="v2-result-subtitle" class="text-xs text-slate-400 mt-1">Soccer Ludo • Created by JAKO</p>
+            </div>
+            <div id="v2-final-scoreboard" class="space-y-2 mt-5"></div>
+            <div class="grid grid-cols-2 gap-2 mt-4">
+                <div class="v2-stat"><b id="v2-stat-goals">0</b><span>Goals</span></div>
+                <div class="v2-stat"><b id="v2-stat-tackles">0</b><span>Tackles</span></div>
+                <div class="v2-stat"><b id="v2-stat-corners">0</b><span>Corners</span></div>
+                <div class="v2-stat"><b id="v2-stat-turns">0</b><span>Turns</span></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mt-5">
+                <button onclick="v2Rematch()" class="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl transition">
+                    <i class="fa-solid fa-rotate-right mr-1"></i> REMATCH
+                </button>
+                <button onclick="v2BackToMenu()" class="bg-slate-800 hover:bg-slate-700 text-white font-black py-3 rounded-xl border border-slate-700 transition">
+                    MAIN MENU
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Goal Celebration Modal -->
+    <div id="goal-modal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border-2 border-emerald-500 max-w-sm w-full rounded-2xl p-6 shadow-2xl text-center space-y-4">
+            <div class="text-5xl animate-bounce">⚽🔥</div>
+            <h2 class="text-3xl font-black bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500 bg-clip-text text-transparent tracking-widest uppercase">
+                GOOOOOAL!!!
+            </h2>
+            <p id="goal-scorer-text" class="text-sm font-semibold text-slate-200">
+                Blue FC has scored a magnificent goal!
+            </p>
+            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">CREATED BY JAKO</div>
+            <button onclick="closeGoalModal()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 rounded-xl shadow-lg transition">
+                CONTINUE MATCH
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /* ==========================================================================
+           WEB AUDIO SYNTHESIZER SOUND ENGINE (CREATED BY JAKO)
+           ========================================================================== */
+        
+        let audioCtx = null;
+        let isMuted = false;
+
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            const icon = document.getElementById('sound-icon');
+            const text = document.getElementById('sound-text');
+            const btn = document.getElementById('sound-btn');
+            
+            if (isMuted) {
+                icon.className = 'fa-solid fa-volume-xmark';
+                text.innerText = 'Sound OFF';
+                btn.className = 'bg-slate-800 border border-slate-700 text-slate-400 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5';
+            } else {
+                icon.className = 'fa-solid fa-volume-high';
+                text.innerText = 'Sound ON';
+                btn.className = 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 hover:bg-emerald-500/30';
+                playSound('whistle');
+            }
+        }
+
+        function playSound(type) {
+            if (isMuted) return;
+            initAudio();
+            if (!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+
+            switch (type) {
+                case 'roll': {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300 + Math.random() * 200, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.05);
+                    break;
+                }
+                case 'move': {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.exponentialRampToValueAtTime(440, now + 0.08);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                    break;
+                }
+                case 'corner': {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(150, now);
+                    osc.frequency.exponentialRampToValueAtTime(600, now + 0.35);
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                    break;
+                }
+                case 'throwin': {
+                    [0, 0.08].forEach(delay => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'square';
+                        osc.frequency.setValueAtTime(520, now + delay);
+                        gain.gain.setValueAtTime(0.15, now + delay);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.06);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + delay);
+                        osc.stop(now + delay + 0.06);
+                    });
+                    break;
+                }
+                case 'tackle': {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(280, now);
+                    osc.frequency.exponentialRampToValueAtTime(70, now + 0.25);
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                    break;
+                }
+                case 'whistle': {
+                    [0, 0.12].forEach(delay => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(2200, now + delay);
+                        gain.gain.setValueAtTime(0.25, now + delay);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + delay + 0.1);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + delay);
+                        osc.stop(now + delay + 0.1);
+                    });
+                    break;
+                }
+                case 'goal': {
+                    const freqs = [261.63, 329.63, 392.00, 523.25];
+                    freqs.forEach((f, idx) => {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(f, now + idx * 0.08);
+                        gain.gain.setValueAtTime(0.25, now + idx * 0.08);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now + idx * 0.08);
+                        osc.stop(now + 0.8);
+                    });
+                    break;
+                }
+                case 'chat': {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(650, now);
+                    osc.frequency.exponentialRampToValueAtTime(1300, now + 0.08);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                    break;
+                }
+            }
+        }
+
+        /* ==========================================================================
+           GAME ENGINE & CONSTANTS (CREATED BY JAKO)
+           ========================================================================== */
+        
+        const TEAMS = [
+            { id: 'blue', name: 'Blue Strikers', color: 'bg-blue-600', text: 'text-blue-400', badge: 'bg-blue-500/20 text-blue-400 border-blue-500/30', startPos: 0, homeEntry: 50 },
+            { id: 'red', name: 'Red Devils', color: 'bg-red-600', text: 'text-red-400', badge: 'bg-red-500/20 text-red-400 border-red-500/30', startPos: 13, homeEntry: 11 },
+            { id: 'green', name: 'Green Eagles', color: 'bg-emerald-600', text: 'text-emerald-400', badge: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', startPos: 26, homeEntry: 24 },
+            { id: 'yellow', name: 'Yellow Lions', color: 'bg-amber-500', text: 'text-amber-400', badge: 'bg-amber-500/20 text-amber-400 border-amber-500/30', startPos: 39, homeEntry: 37 }
+        ];
+
+        // Track Coordinates on 15x15 Grid (52 Outer pitch perimeter tiles)
+        const TRACK_COORDS = [
+            {r:6, c:1}, {r:6, c:2}, {r:6, c:3}, {r:6, c:4}, {r:6, c:5},
+            {r:5, c:6}, {r:4, c:6}, {r:3, c:6}, {r:2, c:6}, {r:1, c:6}, {r:0, c:6},
+            {r:0, c:7}, {r:0, c:8},
+            {r:1, c:8}, {r:2, c:8}, {r:3, c:8}, {r:4, c:8}, {r:5, c:8},
+            {r:6, c:9}, {r:6, c:10}, {r:6, c:11}, {r:6, c:12}, {r:6, c:13}, {r:6, c:14},
+            {r:7, c:14}, {r:8, c:14},
+            {r:8, c:13}, {r:8, c:12}, {r:8, c:11}, {r:8, c:10}, {r:8, c:9},
+            {r:9, c:8}, {r:10, c:8}, {r:11, c:8}, {r:12, c:8}, {r:13, c:8}, {r:14, c:8},
+            {r:14, c:7}, {r:14, c:6},
+            {r:13, c:6}, {r:12, c:6}, {r:11, c:6}, {r:10, c:6}, {r:9, c:6},
+            {r:8, c:5}, {r:8, c:4}, {r:8, c:3}, {r:8, c:2}, {r:8, c:1}, {r:8, c:0},
+            {r:7, c:0}, {r:6, c:0}
+        ];
+
+        // Goal Home Corridors
+        const HOME_STRETCHES = {
+            blue: [{r:7, c:1}, {r:7, c:2}, {r:7, c:3}, {r:7, c:4}, {r:7, c:5}],
+            red: [{r:1, c:7}, {r:2, c:7}, {r:3, c:7}, {r:4, c:7}, {r:5, c:7}],
+            green: [{r:7, c:13}, {r:7, c:12}, {r:7, c:11}, {r:7, c:10}, {r:7, c:9}],
+            yellow: [{r:13, c:7}, {r:12, c:7}, {r:11, c:7}, {r:10, c:7}, {r:9, c:7}]
+        };
+
+        const CORNER_TILES = [2, 15, 28, 41];
+        const THROW_IN_TILES = [8, 21, 34, 47];
+
+        let state = {
+            currentTeamIdx: 0,
+            diceRoll: null,
+            canRoll: true,
+            awaitingMove: false,
+            pawnPositions: {
+                blue: [-1, -1],
+                red: [-1, -1],
+                green: [-1, -1],
+                yellow: [-1, -1]
+            },
+            scores: { blue: 0, red: 0, green: 0, yellow: 0 }
+        };
+
+        /* ==========================================================================
+           INIT & UI BUILDING
+           ========================================================================== */
+
+        function initGame() {
+            renderScoreboard();
+            buildBoard();
+            updateBoardDisplay();
+            logEvent("Match Kick-Off initialized! Game Created by Jako.", "emerald");
+            resetRoomInactivityTimer();
+        }
+
+        function renderScoreboard() {
+            const container = document.getElementById('scoreboard');
+            container.innerHTML = TEAMS.map(team => `
+                <div class="flex items-center gap-1.5 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800 text-xs shadow-inner">
+                    <span class="w-2.5 h-2.5 rounded-full ${team.color}"></span>
+                    <span class="font-bold text-slate-300 hidden sm:inline text-[11px]">${team.name}</span>
+                    <span id="score-${team.id}" class="font-black text-amber-400 ml-1">${state.scores[team.id] || 0}</span>
+                </div>
+            `).join('');
+        }
+
+        function buildBoard() {
+            const boardEl = document.getElementById('board');
+            // Preserve the visual goal trophy while rebuilding the 15x15 board.
+            // Reattach it after the pawn cells so it remains visibly in front of pawns.
+            const goalTrophyLayer = boardEl.querySelector('.v4-goal-trophy-layer');
+            boardEl.innerHTML = '';
+
+            for (let r = 0; r < 15; r++) {
+                for (let c = 0; c < 15; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'board-cell';
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+
+                    configureCellLayout(cell, r, c);
+                    boardEl.appendChild(cell);
+                }
+            }
+
+            if (goalTrophyLayer) boardEl.appendChild(goalTrophyLayer);
+        }
+
+        function configureCellLayout(cell, r, c) {
+            if (r < 6 && c < 6) {
+                cell.classList.add('bg-blue-950/60', 'border-blue-900/40');
+                if (r === 2 && c === 2) cell.id = 'bench-blue-0';
+                if (r === 3 && c === 3) cell.id = 'bench-blue-1';
+                if (r === 1 && c === 1) cell.innerHTML = '<span class="text-[8px] text-blue-400/60 font-black uppercase">BLUE BENCH</span>';
+            } else if (r < 6 && c > 8) {
+                cell.classList.add('bg-red-950/60', 'border-red-900/40');
+                if (r === 2 && c === 12) cell.id = 'bench-red-0';
+                if (r === 3 && c === 11) cell.id = 'bench-red-1';
+                if (r === 1 && c === 13) cell.innerHTML = '<span class="text-[8px] text-red-400/60 font-black uppercase">RED BENCH</span>';
+            } else if (r > 8 && c > 8) {
+                cell.classList.add('bg-emerald-950/60', 'border-emerald-900/40');
+                if (r === 12 && c === 12) cell.id = 'bench-green-0';
+                if (r === 11 && c === 11) cell.id = 'bench-green-1';
+                if (r === 13 && c === 13) cell.innerHTML = '<span class="text-[8px] text-emerald-400/60 font-black uppercase">GREEN BENCH</span>';
+            } else if (r > 8 && c < 6) {
+                cell.classList.add('bg-amber-950/60', 'border-amber-900/40');
+                if (r === 12 && c === 2) cell.id = 'bench-yellow-0';
+                if (r === 11 && c === 3) cell.id = 'bench-yellow-1';
+                if (r === 13 && c === 1) cell.innerHTML = '<span class="text-[8px] text-amber-400/60 font-black uppercase">YELLOW BENCH</span>';
+            }
+            else if (r >= 6 && r <= 8 && c >= 6 && c <= 8) {
+                cell.classList.add('bg-slate-950', 'border-amber-400/40');
+                if (r === 7 && c === 7) {
+                    cell.innerHTML = '<div class="v3-center-trophy" aria-hidden="true"><i class="fa-solid fa-trophy"></i></div>';
+                }
+            } 
+            else {
+                const trackIdx = TRACK_COORDS.findIndex(coord => coord.r === r && coord.c === c);
+                if (trackIdx !== -1) {
+                    cell.classList.add('bg-slate-900/80');
+                    cell.dataset.trackIndex = trackIdx;
+
+                    if (CORNER_TILES.includes(trackIdx)) {
+                        cell.classList.add('bg-yellow-500/20');
+                        cell.innerHTML = '<i class="fa-solid fa-flag text-[9px] text-yellow-400"></i>';
+                    } else if (THROW_IN_TILES.includes(trackIdx)) {
+                        cell.classList.add('bg-orange-500/20');
+                        cell.innerHTML = '<i class="fa-solid fa-hands text-[9px] text-orange-400"></i>';
+                    }
+
+                    TEAMS.forEach(team => {
+                        if (team.startPos === trackIdx) {
+                            cell.classList.add(team.color + '/40');
+                            cell.innerHTML = `<i class="fa-solid fa-play text-[7px] ${team.text}"></i>`;
+                        }
+                    });
+                } else {
+                    for (const team of TEAMS) {
+                        const homeIdx = HOME_STRETCHES[team.id].findIndex(coord => coord.r === r && coord.c === c);
+                        if (homeIdx !== -1) {
+                            cell.classList.add(team.color + '/30');
+                            cell.dataset.homeTeam = team.id;
+                            cell.dataset.homeIdx = homeIdx;
+                            cell.innerHTML = `<span class="text-[8px] text-slate-500 font-bold">${homeIdx + 1}</span>`;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* ==========================================================================
+           GAMEPLAY ENGINE
+           ========================================================================== */
+
+        function rollDice() {
+            if (!state.canRoll) return;
+
+            initAudio();
+            state.canRoll = false;
+            resetRoomInactivityTimer();
+            stopTurnTimer();
+            
+            let rolls = 0;
+            const rollInterval = setInterval(() => {
+                const tempRoll = Math.floor(Math.random() * 6) + 1;
+                updateDiceUI(tempRoll);
+                playSound('roll');
+                rolls++;
+                if (rolls > 8) {
+                    clearInterval(rollInterval);
+                    state.diceRoll = Math.floor(Math.random() * 6) + 1;
+                    updateDiceUI(state.diceRoll);
+                    processRollOutcome();
+                }
+            }, 60);
+        }
+
+        function updateDiceUI(value) {
+            const diceEl = document.getElementById('dice');
+            const icons = ['one', 'two', 'three', 'four', 'five', 'six'];
+            diceEl.innerHTML = `<i class="fa-solid fa-dice-${icons[value - 1]}"></i>`;
+        }
+
+        function processRollOutcome() {
+            const currentTeam = TEAMS[state.currentTeamIdx];
+            const pawns = state.pawnPositions[currentTeam.id];
+
+            const validPawnIndexes = [];
+            pawns.forEach((pos, idx) => {
+                if (canPawnMove(currentTeam.id, pos, state.diceRoll)) {
+                    validPawnIndexes.push(idx);
+                }
+            });
+
+            if (validPawnIndexes.length === 0) {
+                logEvent(`${currentTeam.name} rolled ${state.diceRoll} (No tactical moves available).`, 'slate');
+                setTimeout(nextTurn, 1200);
+            } else if (validPawnIndexes.length === 1 && pawns[validPawnIndexes[0]] === -1 && isSoloAIActive() && isCurrentAITurn()) {
+                movePawn(currentTeam.id, validPawnIndexes[0], state.diceRoll);
+            } else if (isSoloAIActive() && isCurrentAITurn()) {
+                // AI picks best move
+                runAIMove(currentTeam.id, validPawnIndexes, state.diceRoll);
+            } else if (validPawnIndexes.length === 1 && pawns[validPawnIndexes[0]] === -1) {
+                logEvent(`${currentTeam.name} brings out a fresh player onto the pitch!`, 'emerald');
+                movePawn(currentTeam.id, validPawnIndexes[0], state.diceRoll);
+            } else {
+                state.awaitingMove = true;
+                setStatusText(`${currentTeam.name}: Select player to execute turn (${state.diceRoll}).`);
+                highlightSelectablePawns(currentTeam.id, validPawnIndexes);
+                startTurnTimer();
+            }
+        }
+
+        function canPawnMove(teamId, currentPos, roll) {
+            if (currentPos === -1) return roll === 6;
+            if (currentPos === 999) return false;
+            if (currentPos >= 100) {
+                const homeIdx = currentPos - 100;
+                return (homeIdx + roll) <= 5;
+            }
+            return true;
+        }
+
+        function highlightSelectablePawns(teamId, validIndexes) {
+            validIndexes.forEach(idx => {
+                const pawnEl = document.getElementById(`pawn-${teamId}-${idx}`);
+                if (pawnEl) {
+                    pawnEl.classList.add('selectable-pawn');
+                    pawnEl.onclick = () => handlePawnClick(teamId, idx);
+                }
+            });
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.selectable-pawn').forEach(el => {
+                el.classList.remove('selectable-pawn');
+                el.onclick = null;
+            });
+        }
+
+        function handlePawnClick(teamId, pawnIdx) {
+            if (!state.awaitingMove) return;
+            state.awaitingMove = false;
+            clearHighlights();
+            stopTurnTimer();
+            resetRoomInactivityTimer();
+            movePawn(teamId, pawnIdx, state.diceRoll);
+        }
+
+        function movePawn(teamId, pawnIdx, steps) {
+            playSound('move');
+            const currentTeam = TEAMS.find(t => t.id === teamId);
+            let currentPos = state.pawnPositions[teamId][pawnIdx];
+            let newPos = currentPos;
+
+            if (currentPos === -1) {
+                if (steps === 6) newPos = currentTeam.startPos;
+            } else if (currentPos < 100) {
+                let distToHome = (currentTeam.homeEntry - currentPos + 52) % 52;
+                if (steps > distToHome && distToHome >= 0) {
+                    const remainingSteps = steps - distToHome - 1;
+                    if (remainingSteps < 5) newPos = 100 + remainingSteps;
+                    else if (remainingSteps === 5) newPos = 999;
+                } else {
+                    newPos = (currentPos + steps) % 52;
+                }
+            } else if (currentPos >= 100 && currentPos < 999) {
+                const currentHomeIdx = currentPos - 100;
+                const targetHomeIdx = currentHomeIdx + steps;
+                if (targetHomeIdx < 5) newPos = 100 + targetHomeIdx;
+                else if (targetHomeIdx === 5) newPos = 999;
+            }
+
+            state.pawnPositions[teamId][pawnIdx] = newPos;
+            window.v2LastMovedPawn = {team: teamId, idx: pawnIdx};
+            updateBoardDisplay();
+
+            if (newPos === 999) {
+                triggerGoal(teamId);
+                return;
+            }
+
+            evaluateTacticalEvents(teamId, pawnIdx, newPos, steps);
+        }
+
+        function evaluateTacticalEvents(teamId, pawnIdx, pos, stepsRolled) {
+            let bonusRoll = false;
+
+            if (pos < 100 && pos >= 0) {
+                TEAMS.forEach(opponent => {
+                    if (opponent.id !== teamId) {
+                        state.pawnPositions[opponent.id].forEach((oppPos, oppIdx) => {
+                            if (oppPos === pos) {
+                                state.pawnPositions[opponent.id][oppIdx] = -1;
+                                playSound('tackle');
+                                logEvent(`⚡ OVER & TACKLE! ${teamId.toUpperCase()} intercepted ball from ${opponent.name}!`, 'red');
+                                updateBoardDisplay();
+                                bonusRoll = true;
+                            }
+                        });
+                    }
+                });
+
+                if (CORNER_TILES.includes(pos)) {
+                    playSound('corner');
+                    logEvent(`🚩 CORNER KICK! ${teamId.toUpperCase()} whipped in a cross (+3 steps)!`, 'yellow');
+                    setTimeout(() => movePawn(teamId, pawnIdx, 3), 600);
+                    return;
+                }
+
+                if (THROW_IN_TILES.includes(pos)) {
+                    playSound('throwin');
+                    logEvent(`🖐 THROW-IN! ${teamId.toUpperCase()} retains possession (Extra Roll)!`, 'amber');
+                    bonusRoll = true;
+                }
+            }
+
+            if (stepsRolled === 6) {
+                logEvent(`🎲 Six Rolled! ${teamId.toUpperCase()} earns extra turn!`, 'emerald');
+                bonusRoll = true;
+            }
+
+            if (bonusRoll) {
+                state.canRoll = true;
+                setStatusText(`${TEAMS[state.currentTeamIdx].name}: Tactical bonus! Roll again.`);
+                startTurnTimer();
+                if (isSoloAIActive() && isCurrentAITurn()) {
+                    setTimeout(rollDice, 1000);
+                }
+            } else {
+                setTimeout(nextTurn, 900);
+            }
+        }
+
+        function triggerGoal(teamId) {
+            playSound('goal');
+            state.scores[teamId] += 1;
+            document.getElementById(`score-${teamId}`).innerText = state.scores[teamId];
+            
+            const team = TEAMS.find(t => t.id === teamId);
+            logEvent(`⚽ GOAL! ${team.name} scores into the goal box!`, 'emerald');
+
+            document.getElementById('goal-scorer-text').innerText = `${team.name} executed a perfect play and scored!`;
+            document.getElementById('goal-modal').classList.remove('hidden');
+        }
+
+        function closeGoalModal() {
+            document.getElementById('goal-modal').classList.add('hidden');
+            
+            const currentTeam = TEAMS[state.currentTeamIdx];
+            if (state.scores[currentTeam.id] >= 2) {
+                playSound('whistle');
+                logEvent(`🏆 CHAMPIONS! ${currentTeam.name} wins the Soccer Ludo League!`, 'yellow');
+                setStatusText(`🎉 GAME OVER - ${currentTeam.name} Wins!`);
+                state.canRoll = false;
+                stopTurnTimer();
+                stopRoomInactivityTimer();
+            } else {
+                nextTurn();
+            }
+        }
+
+        function nextTurn() {
+            state.currentTeamIdx = (state.currentTeamIdx + 1) % TEAMS.length;
+            
+            // If solo match, skip inactive teams not in solo config
+            if (isSoloAIActive()) {
+                while (!soloGame.activeTeams.includes(TEAMS[state.currentTeamIdx].id)) {
+                    state.currentTeamIdx = (state.currentTeamIdx + 1) % TEAMS.length;
+                }
+            }
+
+            state.canRoll = true;
+            state.diceRoll = null;
+
+            const nextTeam = TEAMS[state.currentTeamIdx];
+            
+            const badge = document.getElementById('turn-badge');
+            badge.className = `px-3 py-1 rounded-full text-xs font-black border ${nextTeam.badge}`;
+            badge.innerText = nextTeam.name;
+
+            setStatusText(`Turn: ${nextTeam.name}. Roll the dice!`);
+            startTurnTimer();
+
+            if (isSoloAIActive() && isCurrentAITurn()) {
+                setTimeout(rollDice, 900);
+            }
+        }
+
+        function updateBoardDisplay() {
+            document.querySelectorAll('.pawn-token').forEach(el => el.remove());
+
+            TEAMS.forEach(team => {
+                state.pawnPositions[team.id].forEach((pos, idx) => {
+                    let targetCell = null;
+
+                    if (pos === -1) {
+                        targetCell = document.getElementById(`bench-${team.id}-${idx}`);
+                    } else if (pos < 100) {
+                        const coord = TRACK_COORDS[pos];
+                        targetCell = document.querySelector(`[data-r="${coord.r}"][data-c="${coord.c}"]`);
+                    } else if (pos >= 100 && pos < 999) {
+                        const homeIdx = pos - 100;
+                        const coord = HOME_STRETCHES[team.id][homeIdx];
+                        targetCell = document.querySelector(`[data-r="${coord.r}"][data-c="${coord.c}"]`);
+                    } else if (pos === 999) {
+                        targetCell = document.querySelector(`[data-r="7"][data-c="7"]`);
+                    }
+
+                    if (targetCell) {
+                        const pawnEl = document.createElement('div');
+                        pawnEl.id = `pawn-${team.id}-${idx}`;
+                        pawnEl.className = `pawn-token w-6 h-6 md:w-7 md:h-7 rounded-full ${team.color} border-2 border-white shadow-lg flex items-center justify-center text-[10px] font-black text-white relative has-ball transition-all duration-300 z-10`;
+                        pawnEl.dataset.number = idx + 1;
+                        pawnEl.innerText = "";
+                        targetCell.appendChild(pawnEl);
+                    }
+                });
+            });
+
+            if (window.v2LastMovedPawn) {
+                const moved = document.getElementById(`pawn-${window.v2LastMovedPawn.team}-${window.v2LastMovedPawn.idx}`);
+                if (moved) {
+                    moved.classList.add('recent-move');
+                    setTimeout(() => moved.classList.remove('recent-move'), 650);
+                }
+                window.v2LastMovedPawn = null;
+            }
+        }
+
+        function setStatusText(text) {
+            document.getElementById('status-log').innerText = text;
+        }
+
+        function logEvent(msg, colorType = 'slate') {
+            const feed = document.getElementById('event-feed');
+            const item = document.createElement('div');
+            
+            const colorMap = {
+                emerald: 'text-emerald-400 border-emerald-500/30 bg-emerald-950/20',
+                red: 'text-red-400 border-red-500/30 bg-red-950/20',
+                yellow: 'text-yellow-400 border-yellow-500/30 bg-yellow-950/20',
+                amber: 'text-amber-400 border-amber-500/30 bg-amber-950/20',
+                slate: 'text-slate-300 border-slate-800 bg-slate-900/40'
+            };
+
+            item.className = `p-1.5 rounded-lg border text-[11px] font-medium leading-tight ${colorMap[colorType] || colorMap.slate}`;
+            item.innerHTML = `<span class="opacity-50 text-[9px] mr-1">[JAKO LOG]</span>${msg}`;
+            
+            feed.prepend(item);
+        }
+
+        function openRulesModal() {
+            document.getElementById('rules-modal').classList.remove('hidden');
+        }
+
+        function closeRulesModal() {
+            document.getElementById('rules-modal').classList.add('hidden');
+        }
+
+        function restartGame() {
+            playSound('whistle');
+            state = {
+                currentTeamIdx: 0,
+                diceRoll: null,
+                canRoll: true,
+                awaitingMove: false,
+                pawnPositions: {
+                    blue: [-1, -1],
+                    red: [-1, -1],
+                    green: [-1, -1],
+                    yellow: [-1, -1]
+                },
+                scores: { blue: 0, red: 0, green: 0, yellow: 0 }
+            };
+
+            document.getElementById('event-feed').innerHTML = '<div class="text-slate-500 italic text-center py-2 text-[11px]">Match restarted. Created by Jako.</div>';
+            initGame();
+        }
+
+
+        /* ======================================================================
+           INACTIVITY & ANTI-FREEZE SYSTEM
+           1. Reconnection on return: Re-syncs player state when they return to tab.
+           2. 1-Hour Freeze: Only freezes if NO match activity occurs for 1 hour.
+           ====================================================================== */
+        
+        let roomInactivityTimer = null;
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+
+        function resetRoomInactivityTimer() {
+            if (roomInactivityTimer) clearTimeout(roomInactivityTimer);
+            document.getElementById('freeze-modal').classList.add('hidden');
+            
+            roomInactivityTimer = setTimeout(() => {
+                freezeRoomDueToInactivity();
+            }, ONE_HOUR_MS);
+        }
+
+        function stopRoomInactivityTimer() {
+            if (roomInactivityTimer) clearTimeout(roomInactivityTimer);
+        }
+
+        function freezeRoomDueToInactivity() {
+            stopTurnTimer();
+            state.canRoll = false;
+            document.getElementById('freeze-modal').classList.remove('hidden');
+            logEvent("🧊 Match frozen due to 1 hour of complete room inactivity.", "red");
+        }
+
+        // Stubs for turn timer functions to preserve compatibility
+        function startTurnTimer() {}
+        function stopTurnTimer() {}
+        function updateTurnTimerDisplay() {}
+        function handleTurnTimeout() {}
+
+        /* ======================================================================
+           MINI CHAT SYSTEM (ONLINE MULTIPLAYER & LOCAL P2P)
+           ====================================================================== */
+        let isChatOpen = false;
+        let unreadChatCount = 0;
+
+        function toggleChat() {
+            isChatOpen = !isChatOpen;
+            const widget = document.getElementById('chat-widget');
+            
+            if (isChatOpen) {
+                widget.classList.remove('hidden', 'opacity-0', 'pointer-events-none', 'translate-y-6');
+                widget.classList.add('opacity-100', 'translate-y-0');
+                unreadChatCount = 0;
+                updateChatBadge();
+                setTimeout(() => document.getElementById('chat-input').focus(), 100);
+            } else {
+                widget.classList.add('opacity-0', 'pointer-events-none', 'translate-y-6');
+                setTimeout(() => widget.classList.add('hidden'), 300);
+            }
+        }
+
+        function updateChatBadge() {
+            const floatBadge = document.getElementById('floating-chat-badge');
+            const headBadge = document.getElementById('chat-header-badge');
+            
+            if (unreadChatCount > 0) {
+                floatBadge.innerText = unreadChatCount;
+                floatBadge.classList.remove('hidden');
+                headBadge.innerText = unreadChatCount;
+                headBadge.classList.remove('hidden');
+            } else {
+                floatBadge.classList.add('hidden');
+                headBadge.classList.add('hidden');
+            }
+        }
+
+        function sendQuickChat(text) {
+            submitChatMessage(text);
+        }
+
+        function handleChatSubmit(e) {
+            e.preventDefault();
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (text) {
+                submitChatMessage(text);
+                input.value = '';
+            }
+        }
+
+        function submitChatMessage(text) {
+            const senderName = mp.myName || (isSoloAIActive() ? soloGame.playerTeam.toUpperCase() : 'Player');
+            const teamId = mp.myTeam || (isSoloAIActive() ? soloGame.playerTeam : TEAMS[state.currentTeamIdx]?.id) || 'blue';
+            
+            const msgObj = {
+                type: 'chat',
+                id: mp.myId || 'local',
+                sender: senderName,
+                team: teamId,
+                text: text,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+
+            if (mp.started) {
+                sendToHost(msgObj);
+            } else {
+                receiveChatMessage(msgObj);
+                if (isSoloAIActive()) {
+                    setTimeout(() => {
+                        const botTeamId = soloGame.activeTeams.find(t => t !== soloGame.playerTeam);
+                        if (botTeamId) {
+                            const botTeam = TEAMS.find(t => t.id === botTeamId);
+                            receiveChatMessage({
+                                type: 'chat',
+                                id: 'bot-' + botTeamId,
+                                sender: botTeam.name,
+                                team: botTeamId,
+                                text: text.includes('GOAL') ? '⚽ We will score next!' : '🤖 Ready for the match!',
+                                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                            });
+                        }
+                    }, 1000);
+                }
+            }
+        }
+
+        function handleHostChatMessage(msgObj) {
+            receiveChatMessage(msgObj);
+            broadcast(msgObj);
+        }
+
+        function receiveChatMessage(msgObj) {
+            playSound('chat');
+            const container = document.getElementById('chat-messages');
+            
+            const isMe = msgObj.id === mp.myId || (msgObj.id === 'local' && !mp.started && (!isSoloAIActive() || msgObj.team === soloGame.playerTeam));
+            const team = TEAMS.find(t => t.id === msgObj.team) || TEAMS[0];
+
+            const msgEl = document.createElement('div');
+            msgEl.className = `flex flex-col ${isMe ? 'items-end' : 'items-start'} my-1`;
+
+            msgEl.innerHTML = `
+                <div class="flex items-center gap-1 text-[10px] text-slate-400 mb-0.5 font-bold">
+                    <span class="w-2 h-2 rounded-full ${team.color} inline-block"></span>
+                    <span>${escapeHtml(msgObj.sender)}</span>
+                    <span class="text-[9px] opacity-60 ml-1">${msgObj.time || ''}</span>
+                </div>
+                <div class="max-w-[85%] px-3 py-1.5 rounded-2xl text-xs font-medium ${
+                    isMe 
+                    ? 'bg-emerald-500 text-slate-950 font-bold rounded-tr-none shadow-md' 
+                    : 'bg-slate-800 text-slate-100 border border-slate-700 rounded-tl-none shadow'
+                }">
+                    ${escapeHtml(msgObj.text)}
+                </div>
+            `;
+
+            container.appendChild(msgEl);
+            container.scrollTop = container.scrollHeight;
+
+            if (!isChatOpen) {
+                unreadChatCount++;
+                updateChatBadge();
+            }
+        }
+
+        // Auto-reconnect & Sync on Tab/App Return (e.g., coming back from phone call)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                if (mp.started) {
+                    if (!mp.host && mp.connections.host) {
+                        if (!mp.connections.host.open) {
+                            reconnectToHost();
+                        } else {
+                            sendToHost({ type: 'syncRequest', id: mp.myId });
+                        }
+                    }
+                    logEvent("📱 Player returned to match!", "emerald");
+                }
+            }
+        });
+
+        function reconnectToHost() {
+            if (!mp.roomCode) return;
+            const conn = mp.peer.connect(mp.roomCode, { reliable: true });
+            mp.connections.host = conn;
+            conn.on('open', () => {
+                conn.send({ type: 'hello', id: mp.myId, name: mp.myName });
+            });
+            conn.on('data', d => handleNetworkMessage(conn, d));
+        }
+
+        /* ==========================================================================
+           SINGLE PLAYER & AI BOTS FEATURE (CREATED BY JAKO)
+           ========================================================================== */
+        let soloGame = {
+            active: false,
+            playerTeam: 'blue',
+            aiCount: 3,
+            activeTeams: ['blue', 'red', 'green', 'yellow']
+        };
+
+        function toggleSinglePlayerMenu() {
+            const modal = document.getElementById('solo-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        function setSoloTeam(teamId) {
+            soloGame.playerTeam = teamId;
+            ['blue', 'red', 'green', 'yellow'].forEach(id => {
+                const btn = document.getElementById(`btn-solo-${id}`);
+                if (!btn) return;
+                btn.classList.toggle('solo-team-selected', id === teamId);
+            });
+        }
+
+        function startSoloGame() {
+            const aiCountSelect = document.getElementById('solo-ai-count').value;
+            soloGame.aiCount = parseInt(aiCountSelect, 10);
+            soloGame.active = true;
+
+            // Build active teams list for Solo mode
+            const allTeamIds = ['blue', 'red', 'green', 'yellow'];
+            const otherTeams = allTeamIds.filter(id => id !== soloGame.playerTeam);
+            soloGame.activeTeams = [soloGame.playerTeam];
+            for (let i = 0; i < soloGame.aiCount && i < otherTeams.length; i++) {
+                soloGame.activeTeams.push(otherTeams[i]);
+            }
+
+            // Close modal
+            document.getElementById('solo-modal').classList.add('hidden');
+            
+            // Reset and start
+            state = {
+                currentTeamIdx: TEAMS.findIndex(t => t.id === soloGame.activeTeams[0]),
+                diceRoll: null,
+                canRoll: true,
+                awaitingMove: false,
+                pawnPositions: { blue: [-1, -1], red: [-1, -1], green: [-1, -1], yellow: [-1, -1] },
+                scores: { blue: 0, red: 0, green: 0, yellow: 0 }
+            };
+
+            initGame();
+            logEvent(`🤖 Solo Match Started! You are ${soloGame.playerTeam.toUpperCase()} against ${soloGame.aiCount} AI Bot(s).`, 'emerald');
+            updateTurnUI();
+        }
+
+        function isSoloAIActive() {
+            return soloGame.active;
+        }
+
+        function isCurrentAITurn() {
+            if (!soloGame.active) return false;
+            const currentTeamId = TEAMS[state.currentTeamIdx].id;
+            return currentTeamId !== soloGame.playerTeam;
+        }
+
+        function runAIMove(teamId, validIndexes, roll) {
+            setStatusText(`${TEAMS[state.currentTeamIdx].name} (AI) is calculating tactical move...`);
+            
+            setTimeout(() => {
+                // AI heuristic: 
+                // 1. Prioritize scoring or tackling opponent if possible
+                // 2. Otherwise pick first available pawn
+                let chosenIdx = validIndexes[0];
+
+                for (const idx of validIndexes) {
+                    let currentPos = state.pawnPositions[teamId][idx];
+                    let currentTeam = TEAMS.find(t => t.id === teamId);
+                    let simulatedPos = currentPos;
+                    
+                    if (currentPos === -1 && roll === 6) simulatedPos = currentTeam.startPos;
+                    else if (currentPos < 100) simulatedPos = (currentPos + roll) % 52;
+
+                    // Check if AI can tackle someone
+                    let willTackle = false;
+                    TEAMS.forEach(opp => {
+                        if (opp.id !== teamId) {
+                            state.pawnPositions[opp.id].forEach(oppPos => {
+                                if (oppPos === simulatedPos) willTackle = true;
+                            });
+                        }
+                    });
+
+                    if (willTackle || currentPos === -1) {
+                        chosenIdx = idx;
+                        break;
+                    }
+                }
+
+                movePawn(teamId, chosenIdx, roll);
+            }, 800);
+        }
+
+        /* ======================================================================
+           JAKO MULTIPLAYER LAYER (PeerJS/WebRTC)
+           ====================================================================== */
+        let mp = {
+            peer: null,
+            host: false,
+            roomCode: null,
+            myId: null,
+            myName: '',
+            myTeam: null,
+            started: false,
+            connections: {},
+            players: {},
+            activeTeams: []
+        };
+
+        const originalRollDice = rollDice;
+        const originalHandlePawnClick = handlePawnClick;
+        const originalRestartGame = restartGame;
+        const originalNextTurn = nextTurn;
+        const originalCloseGoalModal = closeGoalModal;
+
+        function mpShow(id) { document.getElementById(id).classList.remove('hidden'); }
+        function mpHide(id) { document.getElementById(id).classList.add('hidden'); }
+        function mpError(msg) {
+            const el = document.getElementById('mp-error');
+            el.innerText = msg;
+            el.classList.remove('hidden');
+        }
+        function mpStatus(msg) {
+            const el = document.getElementById('mp-status');
+            el.innerText = msg;
+            el.classList.remove('hidden');
+        }
+        function safePlayerList() {
+            return Object.values(mp.players).sort((a,b) => a.slot - b.slot);
+        }
+        function renderLobby() {
+            const list = document.getElementById('player-list');
+            list.innerHTML = safePlayerList().map(p => {
+                const team = TEAMS.find(t => t.id === p.team);
+                return `<div class="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                    <div><span class="font-black text-sm">${escapeHtml(p.name)}</span>${p.host ? '<span class="ml-2 text-[9px] text-amber-400 font-black">HOST</span>' : ''}</div>
+                    <span class="text-[10px] font-black ${team ? team.text : 'text-slate-500'}">${team ? team.name : 'Choosing team…'}</span>
+                </div>`;
+            }).join('');
+            const picker = document.getElementById('team-picker');
+            if (!mp.started) {
+                picker.innerHTML = `<div class="text-[10px] uppercase font-black text-slate-500 mb-2">Choose your team</div><div class="grid grid-cols-2 gap-2">` +
+                    TEAMS.map(t => {
+                        const taken = safePlayerList().some(p => p.team === t.id && p.id !== mp.myId);
+                        const mine = mp.myTeam === t.id;
+                        return `<button data-team="${t.id}" ${taken ? 'disabled' : ''} class="team-choice ${mine ? 'ring-2 ring-emerald-400' : ''} ${taken ? 'opacity-30 cursor-not-allowed' : ''} ${t.color} text-white font-black text-[11px] py-2.5 rounded-xl">${t.name}${taken ? ' • TAKEN' : mine ? ' • YOU' : ''}</button>`;
+                    }).join('') + `</div>`;
+                picker.querySelectorAll('.team-choice:not([disabled])').forEach(btn => btn.onclick = () => chooseTeam(btn.dataset.team));
+            } else picker.innerHTML = '';
+
+            const start = document.getElementById('start-game-btn');
+            if (mp.host && !mp.started) {
+                start.classList.remove('hidden');
+                start.disabled = safePlayerList().length < 2 || safePlayerList().some(p => !p.team);
+                start.className = start.className.replace(/opacity-50/g,'') + (start.disabled ? ' opacity-50' : '');
+            } else start.classList.add('hidden');
+            if (mp.started) {
+                document.getElementById('lobby-status').innerText = 'Match in progress.';
+            } else {
+                const count = safePlayerList().length;
+                const ready = count >= 2 && safePlayerList().every(p => p.team);
+                document.getElementById('lobby-status').innerText = count < 2
+                    ? `${count}/4 players connected. Waiting for at least 1 more player...`
+                    : (mp.host
+                        ? (ready ? `${count}/4 players ready. You can start the match now.` : 'All players must choose a team before starting.')
+                        : `You are ${mp.myTeam ? TEAMS.find(t=>t.id===mp.myTeam)?.name || 'ready' : 'choosing a team'}. Waiting for the host to start.`);
+            }
+        }
+        function escapeHtml(x) { return String(x).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
+        function newRoomCode() { return Math.random().toString(36).slice(2,8).toUpperCase(); }
+        function baseState() {
+            return {
+                currentTeamIdx: 0, diceRoll: null, canRoll: true, awaitingMove: false,
+                pawnPositions: {blue:[-1,-1],red:[-1,-1],green:[-1,-1],yellow:[-1,-1]},
+                scores: {blue:0,red:0,green:0,yellow:0}
+            };
+        }
+        function serialState() { return JSON.parse(JSON.stringify(state)); }
+        function applySnapshot(s) {
+            state = JSON.parse(JSON.stringify(s));
+            renderScoreboard(); updateBoardDisplay(); updateTurnUI();
+            if (state.diceRoll) updateDiceUI(state.diceRoll);
+        }
+        function updateTurnUI() {
+            const team = TEAMS[state.currentTeamIdx];
+            if (!team) return;
+            const badge = document.getElementById('turn-badge');
+            badge.className = `px-3 py-1 rounded-full text-xs font-black border ${team.badge}`;
+            badge.innerText = team.name;
+            
+            const isMyTurnOnline = mp.started && mp.myTeam === team.id;
+            const isSoloTurn = isSoloAIActive() && team.id === soloGame.playerTeam;
+            const isLocalPassAndPlay = !mp.started && !isSoloAIActive();
+            
+            const canUserRoll = isLocalPassAndPlay || isMyTurnOnline || isSoloTurn;
+            document.getElementById('roll-btn').disabled = !canUserRoll || !state.canRoll || (isSoloAIActive() && isCurrentAITurn());
+            document.getElementById('roll-btn').classList.toggle('opacity-50', !canUserRoll || !state.canRoll || (isSoloAIActive() && isCurrentAITurn()));
+        }
+        function broadcast(message) {
+            if (!mp.host) return;
+            Object.values(mp.connections).forEach(c => { try { if (c.open) c.send(message); } catch(e) {} });
+        }
+        function broadcastState() {
+            if (!mp.host) return;
+            broadcast({type:'state', state:serialState()});
+            updateTurnUI();
+        }
+        function hostEvent(msg, color='slate', sound=null) {
+            logEvent(msg,color);
+            broadcast({type:'event', msg, color, sound});
+        }
+        function setupConnection(conn) {
+            mp.connections[conn.peer] = conn;
+            conn.on('data', data => handleNetworkMessage(conn, data));
+            conn.on('close', () => {
+                if (mp.host) {
+                    const p = mp.players[conn.peer];
+                    if (p) {
+                        logEvent(`⚠️ ${p.name} disconnected/on-call. Match continuing...`, 'amber');
+                    }
+                }
+            });
+            conn.on('error', () => {});
+        }
+        function sendToHost(data) {
+            if (mp.host) return handleNetworkMessage(null, data);
+            const conn = mp.connections.host;
+            if (conn && conn.open) conn.send(data);
+            else mpError('Connection paused. Re-establishing connection...');
+        }
+        function handleNetworkMessage(conn, data) {
+            if (!data || !data.type) return;
+            if (mp.host) {
+                if (data.type === 'hello') {
+                    if (Object.keys(mp.players).length >= 4 && !mp.players[data.id]) { conn && conn.send({type:'error',msg:'Room is full.'}); conn && conn.close(); return; }
+                    if (!mp.players[data.id]) {
+                        mp.players[data.id] = {
+                            id:data.id,
+                            name:String(data.name||'Player').slice(0,18),
+                            team:null,
+                            host:false,
+                            slot:Object.keys(mp.players).length
+                        };
+                    }
+                    mp.connections[data.id] = conn;
+                    conn.send({type:'welcome', hostId:mp.myId, roomCode:mp.roomCode, players:Object.values(mp.players), started:mp.started, activeTeams:mp.activeTeams});
+                    broadcast({type:'players',players:Object.values(mp.players)}); renderLobby();
+                    if (mp.started) {
+                        conn.send({type:'state', state:serialState()});
+                    }
+                } else if (data.type === 'syncRequest') {
+                    if (conn) conn.send({type:'state', state:serialState()});
+                } else if (data.type === 'chooseTeam') {
+                    const p=mp.players[data.id];
+                    if (p && TEAMS.some(t=>t.id===data.team) && !Object.values(mp.players).some(x=>x.team===data.team && x.id!==data.id)) {
+                        p.team=data.team; broadcast({type:'players',players:Object.values(mp.players)}); renderLobby();
+                    }
+                } else if (data.type === 'start') {
+                    if (conn && mp.players[conn.peer] && mp.host) startMatch();
+                } else if (data.type === 'action') {
+                    const p=mp.players[data.id];
+                    if (!p || !mp.started || p.team !== TEAMS[state.currentTeamIdx]?.id) return;
+                    if (data.action === 'roll') hostRoll();
+                    if (data.action === 'move') hostMove(p.team, data.pawnIdx);
+                } else if (data.type === 'chat') {
+                    handleHostChatMessage(data);
+                } else if (data.type === 'restart') { restartMatchHost(); }
+            } else {
+                if (data.type === 'welcome') {
+                    mp.players={}; data.players.forEach(p=>mp.players[p.id]=p); mp.myTeam=mp.players[mp.myId]?.team||null; mp.activeTeams=data.activeTeams||[]; mp.started=data.started; renderLobby();
+                } else if (data.type === 'players') {
+                    mp.players={}; data.players.forEach(p=>mp.players[p.id]=p); mp.myTeam=mp.players[mp.myId]?.team||null; renderLobby();
+                } else if (data.type === 'state') { applySnapshot(data.state); startTurnTimer(); if(state.awaitingMove && mp.myTeam===TEAMS[state.currentTeamIdx]?.id){ const valid=[]; state.pawnPositions[mp.myTeam].forEach((pos,i)=>{if(canPawnMove(mp.myTeam,pos,state.diceRoll)) valid.push(i);}); highlightSelectablePawns(mp.myTeam,valid); } }
+                else if (data.type === 'event') { logEvent(data.msg,data.color||'slate'); if(data.sound) playSound(data.sound); if(data.teamId){ const gt=TEAMS.find(t=>t.id===data.teamId); if(gt){ document.getElementById('goal-scorer-text').innerText=`${gt.name} executed a perfect play and scored!`; document.getElementById('goal-modal').classList.remove('hidden'); } } } else if (data.type === 'sound') { if(data.sound && data.sound!=='chat') playSound(data.sound); }
+                else if (data.type === 'chat') { receiveChatMessage(data); }
+                else if (data.type === 'started') { mp.started=true; mp.activeTeams=data.activeTeams; applySnapshot(data.state); mpHide('mp-modal'); mpStatus(`ROOM ${mp.roomCode} • ${mp.myTeam?.toUpperCase()||'PLAYER'}`); if (typeof v3ResetMatchClock === 'function') v3ResetMatchClock(); if (typeof v3StartMatchClock === 'function') v3StartMatchClock(); updateTurnUI(); startTurnTimer(); }
+                else if (data.type === 'error') mpError(data.msg);
+            }
+        }
+        function chooseTeam(team) {
+            if (mp.host) {
+                if (Object.values(mp.players).some(p=>p.team===team && p.id!==mp.myId)) return;
+                mp.players[mp.myId].team=team; mp.myTeam=team; broadcast({type:'players',players:Object.values(mp.players)}); renderLobby();
+            } else sendToHost({type:'chooseTeam',id:mp.myId,team});
+        }
+        function createRoom() {
+            soloGame.active = false;
+            const name=(document.getElementById('mp-name').value||'Host').trim().slice(0,18);
+            mp.myName=name||'Host'; mp.host=true; mp.roomCode=newRoomCode(); mp.myId=mp.roomCode;
+            document.getElementById('create-room-btn').disabled=true;
+            mp.peer=new Peer(mp.roomCode);
+            mp.peer.on('open', id => {
+                mp.myId=id; mp.players[id]={id,name:mp.myName,team:null,host:true,slot:0}; mp.myTeam=null;
+                document.getElementById('room-code-display').innerText=mp.roomCode; mpHide('mp-home'); mpShow('mp-lobby'); renderLobby(); mpStatus(`ROOM ${mp.roomCode} • CHOOSE TEAM`);
+            });
+            mp.peer.on('connection', setupConnection);
+            mp.peer.on('error', err => { document.getElementById('create-room-btn').disabled=false; mpError(err.type==='unavailable-id'?'Room code collision. Please create the room again.':'Could not create room: '+err.type); });
+        }
+        function joinRoom() {
+            soloGame.active = false;
+            const name=(document.getElementById('join-name').value||'Player').trim().slice(0,18);
+            const code=(document.getElementById('room-code-input').value||'').trim().toUpperCase();
+            const btn=document.getElementById('join-room-btn');
+            if(!code || code.length!==6) {
+                mpError('Enter the 6-character room code.');
+                return;
+            }
+            mpError('');
+            mp.myName=name||'Player'; mp.host=false; mp.roomCode=code;
+            btn.disabled=true;
+            btn.innerText='CONNECTING...';
+            mp.peer=new Peer();
+            let connected=false;
+            const resetJoinButton=()=>{
+                btn.disabled=false;
+                btn.innerText='JOIN ROOM';
+            };
+            mp.peer.on('open', id => {
+                mp.myId=id;
+                const conn=mp.peer.connect(code,{reliable:true});
+                mp.connections.host=conn;
+                conn.on('open',()=>{
+                    connected=true;
+                    conn.send({type:'hello',id,name:mp.myName});
+                    mpHide('mp-join');
+                    mpShow('mp-lobby');
+                    document.getElementById('room-code-display').innerText=code;
+                    mpStatus(`CONNECTING TO ROOM ${code}...`);
+                });
+                conn.on('data',d=>handleNetworkMessage(conn,d));
+                conn.on('close',()=>{
+                    if(!mp.started) {
+                        resetJoinButton();
+                        mpHide('mp-lobby');
+                        mpShow('mp-join');
+                    }
+                });
+                conn.on('error',()=>{
+                    resetJoinButton();
+                    mpError('Could not connect to that room. Check the room code and try again.');
+                });
+                setTimeout(()=>{
+                    if(!connected && !mp.started) {
+                        resetJoinButton();
+                        mpError('Connection timed out. Check the 6-character room code and try again.');
+                        try { conn.close(); } catch(e) {}
+                    }
+                },10000);
+            });
+            mp.peer.on('error', err => {
+                resetJoinButton();
+                mpError('Could not join room: '+err.type);
+            });
+        }
+        function startMatch() {
+            if(!mp.host) return;
+            const ps=safePlayerList();
+            if(ps.length<2 || ps.some(p=>!p.team)) return;
+            mp.activeTeams=ps.map(p=>p.team); mp.started=true; state=baseState(); state.currentTeamIdx=TEAMS.findIndex(t=>t.id===mp.activeTeams[0]); initGame();
+            mpHide('mp-modal'); mpStatus(`ROOM ${mp.roomCode} • ${mp.myTeam ? mp.myTeam.toUpperCase() : 'PLAYER'}`); hostEvent(`🏟️ MULTIPLAYER MATCH STARTED! ${ps.length} players ready.`,'emerald','whistle');
+            // Start the match clock from the actual multiplayer Start button path.
+            if (typeof v3ResetMatchClock === 'function') v3ResetMatchClock();
+            if (typeof v3StartMatchClock === 'function') v3StartMatchClock();
+            broadcast({type:'started',activeTeams:mp.activeTeams,state:serialState()}); updateTurnUI(); startTurnTimer();
+        }
+        function hostRoll() {
+            if (!mp.started || state.canRoll===false) return;
+            originalRollDice();
+            setTimeout(()=>broadcastState(),750);
+        }
+        function hostMove(teamId,pawnIdx) {
+            if (!state.awaitingMove) return;
+            originalHandlePawnClick(teamId,pawnIdx);
+            setTimeout(()=>broadcastState(),80);
+        }
+        function hostRollWrapper() {
+            if (mp.started) {
+                if(mp.host) hostRoll(); else sendToHost({type:'action',action:'roll',id:mp.myId});
+            } else {
+                originalRollDice();
+            }
+        }
+        function handlePawnClickMP(teamId,pawnIdx) {
+            if (mp.started) {
+                if (!mp.started || teamId!==mp.myTeam) return;
+                if (mp.host) hostMove(teamId,pawnIdx); else sendToHost({type:'action',action:'move',id:mp.myId,pawnIdx});
+            } else {
+                originalHandlePawnClick(teamId, pawnIdx);
+            }
+        }
+        function nextTurnMP() {
+            if (mp.started) {
+                const currentTeam=TEAMS[state.currentTeamIdx]?.id;
+                let idx=mp.activeTeams.indexOf(currentTeam);
+                idx=(idx+1)%mp.activeTeams.length;
+                state.currentTeamIdx=TEAMS.findIndex(t=>t.id===mp.activeTeams[idx]);
+                state.canRoll=true; state.diceRoll=null; state.awaitingMove=false; clearHighlights();
+                setStatusText(`Turn: ${TEAMS[state.currentTeamIdx].name}. Roll the dice!`);
+                updateTurnUI();
+                startTurnTimer();
+                if(mp.host) broadcastState();
+            } else {
+                originalNextTurn();
+            }
+        }
+        function restartMatchHost() {
+            if(!mp.host) return;
+            state=baseState(); state.currentTeamIdx=0; document.getElementById('event-feed').innerHTML=''; initGame(); broadcast({type:'state',state:serialState()}); updateTurnUI(); startTurnTimer();
+        }
+        function restartGameMP() {
+            if (mp.started) {
+                if(mp.host) restartMatchHost(); else sendToHost({type:'restart',id:mp.myId});
+            } else {
+                originalRestartGame();
+            }
+        }
+        function closeGoalModalMP() {
+            if (mp.started) {
+                document.getElementById('goal-modal').classList.add('hidden');
+                if(mp.host) {
+                    const currentTeam=TEAMS[state.currentTeamIdx];
+                    if(state.scores[currentTeam.id]>=2) { state.canRoll=false; setStatusText(`🎉 GAME OVER - ${currentTeam.name} Wins!`); stopTurnTimer(); stopRoomInactivityTimer(); broadcastState(); }
+                    else { nextTurnMP(); }
+                }
+            } else {
+                originalCloseGoalModal();
+            }
+        }
+        // Lobby buttons
+        document.getElementById('create-room-btn').onclick=createRoom;
+        document.getElementById('show-join-btn').onclick=()=>{mpHide('mp-home');mpShow('mp-join');};
+        document.getElementById('back-home-btn').onclick=()=>{mpHide('mp-join');mpShow('mp-home');};
+        document.getElementById('join-room-btn').onclick=joinRoom;
+        document.getElementById('start-game-btn').onclick=startMatch;
+        document.getElementById('copy-room-btn').onclick=()=>navigator.clipboard?.writeText(mp.roomCode);
+        document.getElementById('room-code-input').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''));
+        document.getElementById('room-code-input').addEventListener('input',()=>{ const b=document.getElementById('join-room-btn'); b.disabled=false; b.innerText='JOIN ROOM'; });
+
+        // Replace controls with multiplayer & solo aware wrappers
+        rollDice = hostRollWrapper;
+        handlePawnClick = handlePawnClickMP;
+        restartGame = restartGameMP;
+        nextTurn = nextTurnMP;
+        closeGoalModal = closeGoalModalMP;
+
+        // Enforce player ownership
+        const _originalProcessRollOutcome=processRollOutcome;
+        processRollOutcome=function(){
+            _originalProcessRollOutcome();
+            if(mp.host && mp.started) { broadcastState(); updateTurnUI(); }
+        };
+        const _originalEvaluateTacticalEvents=evaluateTacticalEvents;
+        evaluateTacticalEvents=function(teamId,pawnIdx,pos,steps){
+            _originalEvaluateTacticalEvents(teamId,pawnIdx,pos,steps);
+            if(mp.host && mp.started) setTimeout(()=>broadcastState(),100);
+        };
+        const _originalTriggerGoal=triggerGoal;
+        triggerGoal=function(teamId){
+            _originalTriggerGoal(teamId);
+            if(mp.host && mp.started) broadcast({type:'event',msg:`⚽ GOAL! ${TEAMS.find(t=>t.id===teamId).name} scores into the goal box!`,color:'emerald',sound:null,teamId});
+        };
+
+        const _originalHighlight=highlightSelectablePawns;
+        highlightSelectablePawns=function(teamId,validIndexes){
+            if(mp.started && !mp.host && teamId!==mp.myTeam) return;
+            if(isSoloAIActive() && teamId !== soloGame.playerTeam) return;
+            _originalHighlight(teamId,validIndexes);
+        };
+
+        window.addEventListener('load',()=>{ initGame(); });
+
+
+        window.onload = initGame;
+
+        /* =========================================================
+           SOCCER LUDO 2.0 QUALITY / FEEDBACK SYSTEM
+           ========================================================= */
+        const v2Stats = {
+            goals: 0,
+            tackles: 0,
+            corners: 0,
+            turns: 0
+        };
+        let v2ToastTimer = null;
+
+        function v2ShowToast(title, text) {
+            const box = document.getElementById('v2-toast');
+            if (!box) return;
+            document.getElementById('v2-toast-title').textContent = title;
+            document.getElementById('v2-toast-text').textContent = text;
+            box.classList.add('show');
+            clearTimeout(v2ToastTimer);
+            v2ToastTimer = setTimeout(() => box.classList.remove('show'), 1900);
+        }
+
+        function v2Flash(kicker, title, duration=950) {
+            const flash = document.getElementById('v2-flash');
+            if (!flash) return;
+            document.getElementById('v2-flash-kicker').textContent = kicker;
+            document.getElementById('v2-flash-title').textContent = title;
+            flash.classList.add('show');
+            setTimeout(() => flash.classList.remove('show'), duration);
+        }
+
+        function v2GoalBurst() {
+            const burst = document.getElementById('goal-celebration-burst');
+            if (!burst) return;
+            burst.innerHTML = '';
+            burst.classList.remove('hidden');
+            for (let i = 0; i < 28; i++) {
+                const piece = document.createElement('span');
+                piece.className = 'goal-piece';
+                const angle = (Math.PI * 2 * i / 28) + (Math.random() - .5) * .45;
+                const distance = 110 + Math.random() * 280;
+                piece.style.setProperty('--dx', `${Math.cos(angle) * distance}px`);
+                piece.style.setProperty('--dy', `${Math.sin(angle) * distance - 80}px`);
+                piece.style.setProperty('--rot', `${Math.round(Math.random() * 720 - 360)}deg`);
+                burst.appendChild(piece);
+            }
+            setTimeout(() => { burst.classList.add('hidden'); burst.innerHTML = ''; }, 1000);
+        }
+
+        function v2RenderFinalScoreboard() {
+            const box = document.getElementById('v2-final-scoreboard');
+            if (!box) return;
+            box.innerHTML = TEAMS.map(t => `
+                <div class="v2-scoreline">
+                    <span class="team-name"><span class="inline-block w-2.5 h-2.5 rounded-full ${t.color} mr-2"></span>${t.name}</span>
+                    <span class="team-score">${state.scores[t.id] || 0}</span>
+                </div>`).join('');
+        }
+
+        function v2ShowResult(team) {
+            const el = document.getElementById('v2-result');
+            if (!el) return;
+            document.getElementById('v2-result-title').textContent = team.name;
+            document.getElementById('v2-result-subtitle').textContent =
+                `${team.name} won the match • Created by JAKO`;
+            document.getElementById('v2-stat-goals').textContent = state.scores[team.id] || 0;
+            document.getElementById('v2-stat-tackles').textContent = v2Stats.tackles;
+            document.getElementById('v2-stat-corners').textContent = v2Stats.corners;
+            document.getElementById('v2-stat-turns').textContent = v2Stats.turns;
+            v2RenderFinalScoreboard();
+            el.classList.remove('hidden');
+            v2Flash('FINAL WHISTLE', 'CHAMPIONS', 1200);
+        }
+
+        function v2HideResult() {
+            document.getElementById('v2-result')?.classList.add('hidden');
+        }
+
+        function startQuickPlayV2() {
+            const mpModal = document.getElementById('mp-modal');
+            if (mpModal) mpModal.classList.add('hidden');
+            const soloModal = document.getElementById('solo-modal');
+            if (soloModal) soloModal.classList.remove('hidden');
+            v2ShowToast('QUICK PLAY', 'Choose your team and AI difficulty, then start the match.');
+            v2Flash('SOCCER LUDO 2.1', 'READY', 750);
+        }
+
+        function v2Rematch() {
+            v2HideResult();
+            try {
+                restartGame();
+            } catch (e) {
+                window.location.reload();
+            }
+            setTimeout(() => v2Flash('NEW MATCH', 'KICK-OFF', 850), 250);
+        }
+
+        function v2BackToMenu() {
+            v2HideResult();
+            document.getElementById('mp-modal')?.classList.remove('hidden');
+            document.getElementById('solo-modal')?.classList.add('hidden');
+        }
+
+        function v2ResetStats() {
+            v2Stats.goals = 0;
+            v2Stats.tackles = 0;
+            v2Stats.corners = 0;
+            v2Stats.turns = 0;
+            v2HideResult();
+        }
+
+        /* Higher-quality AI: Easy = random, Pro = tactical, Master = aggressive. */
+        function v2SimulatePosition(teamId, currentPos, roll) {
+            const team = TEAMS.find(t => t.id === teamId);
+            let newPos = currentPos;
+            if (currentPos === -1 && roll === 6) {
+                newPos = team.startPos;
+            } else if (currentPos < 100) {
+                const distToHome = (team.homeEntry - currentPos + 52) % 52;
+                if (roll > distToHome && distToHome >= 0) {
+                    const remaining = roll - distToHome - 1;
+                    if (remaining < 5) newPos = 100 + remaining;
+                    else if (remaining === 5) newPos = 999;
+                } else {
+                    newPos = (currentPos + roll) % 52;
+                }
+            } else if (currentPos >= 100 && currentPos < 999) {
+                const target = (currentPos - 100) + roll;
+                if (target < 5) newPos = 100 + target;
+                else if (target === 5) newPos = 999;
+            }
+            return newPos;
+        }
+
+        function v2ScoreAIMove(teamId, idx, roll, difficulty) {
+            const currentPos = state.pawnPositions[teamId][idx];
+            const newPos = v2SimulatePosition(teamId, currentPos, roll);
+            let score = Math.random() * (difficulty === 'easy' ? 100 : 8);
+
+            if (newPos === 999) score += 10000;
+            if (currentPos === -1 && newPos >= 0) score += 450;
+            if (newPos >= 100 && newPos < 999) score += 260;
+            if (newPos >= 0 && newPos < 52) score += newPos === CORNER_TILES.find(x => x === newPos) ? 120 : 0;
+
+            let canTackle = false;
+            TEAMS.forEach(opp => {
+                if (opp.id === teamId) return;
+                state.pawnPositions[opp.id].forEach(oppPos => {
+                    if (oppPos === newPos && newPos < 52) canTackle = true;
+                });
+            });
+            if (canTackle) score += difficulty === 'master' ? 900 : difficulty === 'pro' ? 600 : 180;
+
+            if (difficulty === 'master') {
+                score += Math.max(0, newPos) * 2;
+            } else if (difficulty === 'pro') {
+                score += Math.max(0, newPos);
+            }
+            return score;
+        }
+
+        runAIMove = function(teamId, validIndexes, roll) {
+            const difficulty = document.getElementById('v2-ai-difficulty')?.value || 'pro';
+            setStatusText(`${TEAMS[state.currentTeamIdx].name} (AI) is reading the pitch...`);
+            setTimeout(() => {
+                let chosenIdx = validIndexes[0];
+                if (difficulty === 'easy') {
+                    chosenIdx = validIndexes[Math.floor(Math.random() * validIndexes.length)];
+                } else {
+                    let best = -Infinity;
+                    validIndexes.forEach(idx => {
+                        const score = v2ScoreAIMove(teamId, idx, roll, difficulty);
+                        if (score > best) {
+                            best = score;
+                            chosenIdx = idx;
+                        }
+                    });
+                }
+                movePawn(teamId, chosenIdx, roll);
+            }, difficulty === 'master' ? 650 : 800);
+        };
+
+        /* Preserve existing engine functions and add presentation/stat tracking. */
+        const v2OriginalTriggerGoal = triggerGoal;
+        triggerGoal = function(teamId) {
+            v2Stats.goals += 1;
+            const team = TEAMS.find(t => t.id === teamId);
+            v2OriginalTriggerGoal(teamId);
+            v2GoalBurst();
+            v2Flash('GOAL', `${team.name}!`, 1150);
+            v2ShowToast('GOAL', `${team.name} found the back of the net.`);
+            if ((state.scores[teamId] || 0) >= 2) {
+                setTimeout(() => v2ShowResult(team), 1200);
+            }
+        };
+
+        const v2OriginalEvaluateTacticalEvents = evaluateTacticalEvents;
+        evaluateTacticalEvents = function(teamId, pawnIdx, pos, stepsRolled) {
+            const before = {};
+            TEAMS.forEach(t => before[t.id] = [...state.pawnPositions[t.id]]);
+            v2OriginalEvaluateTacticalEvents(teamId, pawnIdx, pos, stepsRolled);
+
+            if (pos < 100 && pos >= 0) {
+                let tackleFound = false;
+                TEAMS.forEach(opp => {
+                    if (opp.id === teamId) return;
+                    opp.id && before[opp.id].forEach((oldPos, oldIdx) => {
+                        if (oldPos === pos && state.pawnPositions[opp.id][oldIdx] === -1) tackleFound = true;
+                    });
+                });
+                if (tackleFound) {
+                    v2Stats.tackles += 1;
+                    v2Flash('TACTICAL EVENT', 'TACKLE!', 700);
+                    v2ShowToast('TACKLE', 'Possession won — opponent sent back to the bench.');
+                }
+                if (CORNER_TILES.includes(pos)) {
+                    v2Stats.corners += 1;
+                    v2Flash('SET PIECE', 'CORNER KICK', 700);
+                }
+            }
+        };
+
+        const v2OriginalNextTurn = nextTurn;
+        nextTurn = function() {
+            v2Stats.turns += 1;
+            v2OriginalNextTurn();
+        };
+
+        const v2OriginalRestartGame = restartGame;
+        restartGame = function() {
+            v2ResetStats();
+            v2OriginalRestartGame();
+        };
+
+        /* Make the first interaction feel like a deliberate game start. */
+        document.addEventListener('click', (event) => {
+            const target = event.target.closest?.('#roll-btn');
+            if (target) {
+                v2ShowToast('YOUR TURN', 'Roll the dice and look for the highlighted player.');
+            }
+        });
+
+        /* =========================================================
+           SOCCER LUDO 2.2 — MATCH CLOCK + WINNER PRESENTATION
+           ========================================================= */
+        const v3Clock = { seconds:0, timer:null, running:false };
+        function v3FormatClock(sec){ const m=Math.floor(sec/60).toString().padStart(2,'0'); const s=(sec%60).toString().padStart(2,'0'); return `${m}:${s}`; }
+        function v3RenderClock(){ const el=document.getElementById('match-clock-value'); if(el) el.textContent=v3FormatClock(v3Clock.seconds); }
+        function v3StartMatchClock(){
+            if(v3Clock.running) return; v3Clock.running=true;
+            const box=document.getElementById('match-clock'); box?.classList.remove('paused');
+            if(v3Clock.timer) clearInterval(v3Clock.timer);
+            v3Clock.timer=setInterval(()=>{ if(v3Clock.running){v3Clock.seconds++;v3RenderClock();} },1000);
+        }
+        function v3StopMatchClock(){ v3Clock.running=false; const box=document.getElementById('match-clock'); box?.classList.add('paused'); if(v3Clock.timer){clearInterval(v3Clock.timer);v3Clock.timer=null;} }
+        function v3ResetMatchClock(){ v3StopMatchClock(); v3Clock.seconds=0; v3RenderClock(); const box=document.getElementById('match-clock'); box?.classList.remove('paused'); }
+
+        function v3WinnerSound(){
+            if(typeof isMuted!=='undefined' && isMuted) return;
+            initAudio(); if(!audioCtx) return; const now=audioCtx.currentTime;
+            const notes=[523.25,659.25,783.99,1046.50,1318.51];
+            notes.forEach((f,i)=>{ const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.type='triangle'; o.frequency.setValueAtTime(f,now+i*.12); g.gain.setValueAtTime(.001,now+i*.12); g.gain.linearRampToValueAtTime(.28,now+i*.12+.025); g.gain.exponentialRampToValueAtTime(.01,now+i*.12+.42); o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.12);o.stop(now+i*.12+.45); });
+            setTimeout(()=>playSound('whistle'),620);
+        }
+        function v3ShowWinner(team){
+            const overlay=document.getElementById('v3-winner-overlay'); if(!overlay) return;
+            document.getElementById('v3-winner-title').textContent=team.name;
+            document.getElementById('v3-winner-sub').textContent=`FULL TIME • ${v3FormatClock(v3Clock.seconds)}`;
+            overlay.classList.add('show'); v3WinnerSound();
+            setTimeout(()=>overlay.classList.remove('show'),2600);
+        }
+
+        const v3StartSoloOriginal = startSoloGame;
+        startSoloGame = function(){ v3ResetMatchClock(); v3StartSoloOriginal(); setTimeout(v3StartMatchClock,300); };
+
+        const v3StartMatchOriginal = startMatch;
+        startMatch = function(){ v3ResetMatchClock(); v3StartMatchOriginal(); setTimeout(v3StartMatchClock,300); };
+
+        const v3TriggerGoalOriginal = triggerGoal;
+        triggerGoal = function(teamId){ v3TriggerGoalOriginal(teamId); };
+
+        const v3ShowResultOriginal = v2ShowResult;
+        v2ShowResult = function(team){ v3StopMatchClock(); v3ShowWinner(team); v3ShowResultOriginal(team); };
+
+        const v3RestartOriginal = restartGame;
+        restartGame = function(){ v3ResetMatchClock(); v3RestartOriginal(); };
+
+        const v3BackMenuOriginal = v2BackToMenu;
+        v2BackToMenu = function(){ v3ResetMatchClock(); v3BackMenuOriginal(); };
+
+        // Ensure the clock stops immediately when the existing winner path ends a match.
+        const v3CloseGoalOriginal = closeGoalModal;
+        closeGoalModal = function(){
+            const currentTeam=TEAMS[state.currentTeamIdx];
+            const winning=!!(currentTeam && (state.scores[currentTeam.id]||0)>=2);
+            v3CloseGoalOriginal();
+            if(winning){ v3StopMatchClock(); setTimeout(()=>v3ShowWinner(currentTeam),180); }
+        };
+
+        v3ResetMatchClock();
+        window.SOCCER_LUDO_VERSION='2.2';
+    
+        /* Multiplayer audio sync: mirror gameplay sounds from the authoritative host. */
+        const _networkPlaySound = playSound;
+        playSound = function(type){
+            _networkPlaySound(type);
+            if(mp && mp.started && mp.host && ['roll','move','tackle','corner','throwin','goal','whistle'].includes(type)){
+                broadcast({type:'sound', sound:type});
+            }
+        };
+</script>
+</body>
+</html>
